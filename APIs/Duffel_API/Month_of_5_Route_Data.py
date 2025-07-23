@@ -42,7 +42,7 @@ if __name__ == "__main__":
 
 
     headers = {
-        "Authorization": f"Bearer {access_token}",
+        "Authorization": "Bearer duffel_test_9c7TOGTk6AkbJGq4fyAk9x0b3nY9CDw0FiB6xeawa9e",
         "Content-Type": "application/json",
         "Duffel-Version": "v2"
     }
@@ -142,7 +142,7 @@ if __name__ == "__main__":
 
 
     df = pd.DataFrame(data_csv)
-    df.to_csv("Duffel_API/offers.csv", index=False)
+    df.to_csv("offers.csv", index=False)
 
 
 
