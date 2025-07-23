@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from datetime import date, timedelta
 import pandas as pd
 import time
+import sqlite3
 
 
 DAYS_OF_DATA = 30
@@ -42,7 +43,7 @@ if __name__ == "__main__":
 
 
     headers = {
-        "Authorization": "Bearer duffel_test_9c7TOGTk6AkbJGq4fyAk9x0b3nY9CDw0FiB6xeawa9e",
+        "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json",
         "Duffel-Version": "v2"
     }
@@ -58,6 +59,24 @@ if __name__ == "__main__":
     airlines = [("DXB", "LHR"), ("SIN", "NRT"), ("JFK", "SFO"), ("SFO", "NRT"), ("MIA", "BOG")]
     start_date = date.today() + timedelta(days=1)
     end_date = date.today() + timedelta(days=DAYS_OF_DATA)
+
+    # Set up SQLite database
+    conn = sqlite3.connect('Duffel_Flights.db')
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS flights (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            origin TEXT,
+            destination TEXT,
+            date TEXT,
+            airline_name TEXT,
+            airline_code TEXT,
+            total_amount REAL,
+            total_currency TEXT,
+            segments TEXT
+        )
+    ''')
+    conn.commit()
 
     for origin, destination in airlines:
         departure_date = start_date
@@ -130,8 +149,13 @@ if __name__ == "__main__":
                                        airline_code,
                                        total_amount,
                                        total_currency,
-                                       segment_origin_destination_pairs]
-                        
+                                       str(segment_origin_destination_pairs)]
+
+                        c.execute('''
+                            INSERT INTO flights (origin, destination, date, airline_name, airline_code, total_amount, total_currency, segments)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', data_append)
+                        conn.commit()
                         for i, key in enumerate(data_csv.keys()):
                             data_csv[key].append(data_append[i])
             else:
@@ -140,10 +164,4 @@ if __name__ == "__main__":
 
             departure_date += timedelta(days=1)
 
-
-    df = pd.DataFrame(data_csv)
-    df.to_csv("offers.csv", index=False)
-
-
-
-
+    conn.close()
