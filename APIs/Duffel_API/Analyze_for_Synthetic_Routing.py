@@ -11,28 +11,46 @@ from dotenv import load_dotenv
 import os
 import requests
 import time
+import matplotlib.pyplot as plt
+import numpy as np
+import sqlite3
 
 
 
 # ORIGINAL_INPUT_FILE = 'Duffel_API/Month_of_5.csv'
-ORIGINAL_INPUT_FILE = 'Duffel_API/Day_of_5.csv'  # Just checking one day keeps computation time reasonable; it takes a lot of Duffel calls to do synthetic routing
+# ORIGINAL_INPUT_FILE = 'Duffel_API/Day_of_5.csv'  # Just checking one day keeps computation time reasonable; it takes a lot of Duffel calls to do synthetic routing
 
-ROUTING_INPUT_FILE = 'Duffel_API/Day_of_Possible_Routings_5.csv'  # This should be the output of "Gather Possible Routings.py" on ORIGINAL_INPUT_FILE
+# ROUTING_INPUT_FILE = 'Duffel_API/Day_of_Possible_Routings_5.csv'  # This should be the output of "Gather Possible Routings.py" on ORIGINAL_INPUT_FILE
+
+# Read from SQLite DB instead of CSV
+conn = sqlite3.connect('Duffel_Flights.db')
+c = conn.cursor()
+# Original flights
+c.execute('SELECT origin, destination, date, airline_name, airline_code, total_amount, total_currency, segments FROM flights')
+rows = c.fetchall()
+columns = ["origin", "destination", "date", "airline_name", "airline_code", "total_amount", "total_currency", "segments"]
+original_data_dict = {col: [] for col in columns}
+for row in rows:
+    for i, col in enumerate(columns):
+        original_data_dict[col].append(row[i])
+# Routing flights
+c.execute('SELECT root_origin, root_destination, date, origin, destination, airline_name, airline_code, total_amount, total_currency, segments FROM possible_routings')
+routing_rows = c.fetchall()
+routing_columns = ["root_origin", "root_destination", "date", "origin", "destination", "airline_name", "airline_code", "total_amount", "total_currency", "segments"]
+routing_data_dict = {col: [] for col in routing_columns}
+for row in routing_rows:
+    for i, col in enumerate(routing_columns):
+        routing_data_dict[col].append(row[i])
+conn.close()
 
 
-df_original = pd.read_csv(ORIGINAL_INPUT_FILE)
-# We will turn it back into a dictionary and fix the segment lists (they get turned into strings in the CSV file)
-original_data_dict = df_original.to_dict()
+import ast
 segment_list = original_data_dict['segments']
 for i in range(len(segment_list)):
-    segment_list[i] = ast.literal_eval(segment_list[i])  # Remember that list mutability will carry the changes to "original_data_dict"
-
-df_routing = pd.read_csv(ROUTING_INPUT_FILE)
-# We will turn it back into a dictionary and fix the segment lists (they get turned into strings in the CSV file)
-routing_data_dict = df_routing.to_dict()
+    segment_list[i] = ast.literal_eval(segment_list[i])
 segment_list = routing_data_dict['segments']
 for i in range(len(segment_list)):
-    segment_list[i] = ast.literal_eval(segment_list[i])  # Remember that list mutability will carry the changes to "routing_data_dict"
+    segment_list[i] = ast.literal_eval(segment_list[i])
 
 
 def get_cheapest_flight_index_and_amount(flight_dict_list):
@@ -172,7 +190,7 @@ routing_flights = {}
     #  'segments' : <segments>,
     # }
 
-routing_csv_length = len(routing_data_dict['origin'])
+routing_csv_length = len(routing_data_dict['root_origin'])
 current_index = 0
 while current_index < routing_csv_length:  # This will go until we exhaust the CSV file
     identifiers = (routing_data_dict['root_origin'][current_index],
@@ -261,14 +279,47 @@ for key1 in routing_flights.keys():
     print(f'    The cheapest direct flight is {direct_price}')
     print(f'    The cheapest synthetic routing flight is {synthetic_price}')
     print(f'    That synthetic routing itinerary is {cheapest_synthetic_legs}')
-    
 
 
+route_dates = []
+direct_prices = []
+synthetic_prices = []
+for key1 in routing_flights.keys():
+    route = f"{key1[0]}->{key1[1]}"
+    date = key1[2]
+    direct_price = original_cheapest_flights[key1][1]
+    key2_list = list(routing_flights[key1].keys())
+    leg_list = key2_list
+    all_valid_leg_orders = get_all_valid_leg_orders(root_origin=key1[0], root_destination=key1[1], leg_list=leg_list)
+    synthetic_prices_list = []
+    for i in range(len(all_valid_leg_orders)):
+        this_leg_order = all_valid_leg_orders[i]
+        total_price = 0
+        for j in range(len(this_leg_order)):
+            leg_index = this_leg_order[j]
+            actual_leg = leg_list[leg_index]
+            total_price += routing_cheapest_flights[key1][actual_leg][1]
+        synthetic_prices_list.append(total_price)
+    if synthetic_prices_list:
+        synthetic_price = min(synthetic_prices_list)
+    else:
+        synthetic_price = np.nan
+    route_dates.append(f"{route} {date}")
+    direct_prices.append(float(direct_price))
+    synthetic_prices.append(float(synthetic_price) if not np.isnan(synthetic_price) else np.nan)
 
+plt.figure(figsize=(12, 6))
+plt.plot(route_dates, direct_prices, label='Direct Price', marker='o')
+plt.plot(route_dates, synthetic_prices, label='Synthetic Price', marker='x')
+plt.xticks(rotation=90)
+plt.xlabel('Route and Date')
+plt.ylabel('Price')
+plt.title('Direct vs Synthetic Flight Prices by Route and Date')
+plt.legend()
+plt.tight_layout()
+plt.show()
 
-
-
-
-
-
-
+print("\n--- Summary Statistics ---")
+print(f"Average direct price: {np.nanmean(direct_prices):.2f}")
+print(f"Average synthetic price: {np.nanmean(synthetic_prices):.2f}")
+print(f"Number of routes cheaper with synthetic routing: {np.nansum(np.array(synthetic_prices) < np.array(direct_prices))}")
