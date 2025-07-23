@@ -13,22 +13,52 @@ from dotenv import load_dotenv
 import os
 import requests
 import time
+import sqlite3
+import json
 
 
 
 # INPUT_FILE = 'Duffel_API/Month_of_5.csv'
-INPUT_FILE = 'Duffel_API/Day_of_5.csv'  # Just checking one day keeps computation time reasonable; it takes a lot of Duffel calls to do synthetic routing
+# INPUT_FILE = 'Duffel_API/Day_of_5.csv'  # Just checking one day keeps computation time reasonable; it takes a lot of Duffel calls to do synthetic routing
 
-OUTPUT_FILE = 'Duffel_API/Possible_Routings_5.csv'
+# Remove OUTPUT_FILE and CSV writing
+# OUTPUT_FILE = 'Duffel_API/Possible_Routings_5.csv'
 
-df = pd.read_csv(INPUT_FILE)
+# Set up possible_routings table in DB
+conn = sqlite3.connect('Duffel_Flights.db')
+c = conn.cursor()
+c.execute('''
+    CREATE TABLE IF NOT EXISTS possible_routings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        root_origin TEXT,
+        root_destination TEXT,
+        date TEXT,
+        origin TEXT,
+        destination TEXT,
+        airline_name TEXT,
+        airline_code TEXT,
+        total_amount REAL,
+        total_currency TEXT,
+        segments TEXT
+    )
+''')
+conn.commit()
+
+c = conn.cursor()
+c.execute('SELECT origin, destination, date, airline_name, airline_code, total_amount, total_currency, segments FROM flights')
+rows = c.fetchall()
+
+# Convert to dictionary format similar to previous CSV logic
+columns = ["origin", "destination", "date", "airline_name", "airline_code", "total_amount", "total_currency", "segments"]
+data_dict = {col: [] for col in columns}
+for row in rows:
+    for i, col in enumerate(columns):
+        data_dict[col].append(row[i])
 
 
-# We will turn it back into a dictionary and fix the segment lists (they get turned into strings in the CSV file)
-data_dict = df.to_dict()
 segment_list = data_dict['segments']
 for i in range(len(segment_list)):
-    segment_list[i] = ast.literal_eval(segment_list[i])  # Remember that list mutability will carry the changes to "data_dict"
+    segment_list[i] = json.loads(segment_list[i])  # Remember that list mutability will carry the changes to "data_dict"
 
 # Now reorganize the csv data into a dictionary that uses the (origin, destination, date) tuple to group flights.
 # We also find all the common layover flights at the same time, and organize them in the same way.
@@ -38,13 +68,6 @@ for i in range(len(segment_list)):
 # but for now it works.
 
 original_flights = {}
-# Each (origin, destination, date) key of "original_flights" will lead to another dictionary of the form:
-    # {'airline_name': <name>,
-    #  'airline_code': <code>,
-    #  'total_amount': <amount>,
-    #  'total_currency' : <currency>,
-    #  'segments' : <segments>,
-    # }
 inbetween_flights = {}
 
 
@@ -79,11 +102,6 @@ while current_index < csv_length:  # This will go until we exhaust the CSV file
                                            data_dict['destination'][current_index],
                                            data_dict['date'][current_index]) != identifiers:
             break
-
-# for key in inbetween_flights.keys():
-#     print(key)
-#     for leg in inbetween_flights[key]:
-#         print(leg)
 
 load_dotenv()
 access_token = os.getenv("ACCESS_TOKEN")
@@ -182,21 +200,14 @@ for key in inbetween_flights.keys():
                                    airline_code,
                                    total_amount,
                                    total_currency,
-                                   segment_origin_destination_pairs]
-                    
-
-                    for i, key in enumerate(data_csv.keys()):
-                        data_csv[key].append(data_append[i])
+                                   str(segment_origin_destination_pairs)]
+                    c.execute('''
+                        INSERT INTO possible_routings (root_origin, root_destination, date, origin, destination, airline_name, airline_code, total_amount, total_currency, segments)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', data_append)
+                    conn.commit()
         else:
             print(f"Error for {origin} to {destination} on {date}: {response.status_code}")
             print(response.text)
     
-df_final = pd.DataFrame(data_csv)
-df_final.to_csv(OUTPUT_FILE, index=False)
-
-
-
-
-
-
-
+conn.close()
