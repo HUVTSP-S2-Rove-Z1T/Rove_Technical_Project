@@ -1,18 +1,7 @@
 import streamlit as st
 import pandas as pd
 
-# -----------------------------
-# Placeholder redemption data
-# Replace with CSV or real API later
-# -----------------------------
-data = {
-    "airline": ["United", "United", "United", "Delta", "Delta", "Delta"],
-    "type": ["Flight", "Hotel", "Gift Card", "Flight", "Hotel", "Gift Card"],
-    "miles_required": [60000, 30000, 10000, 70000, 35000, 10000],
-    "cash_value": [850, 250, 100, 950, 275, 100],
-    "taxes_fees": [100, 0, 0, 120, 0, 0]
-}
-df = pd.DataFrame(data)
+df = pd.read_csv("VPM_Research.csv")
 
 # -----------------------------
 # Streamlit App UI
@@ -31,8 +20,11 @@ filtered = df[df["airline"] == user_airline].copy()
 
 # Calculate net value and value per mile
 filtered["net_value"] = filtered["cash_value"] - filtered["taxes_fees"]
+filtered["adjusted_value"] = filtered["net_value"] - filtered["miles_fee"]
 filtered["vpm"] = filtered["net_value"] / filtered["miles_required"]  # in dollars
 filtered["vpm_cents"] = filtered["vpm"] * 100  # in cents
+
+filtered = filtered.sort_values(by="vpm", ascending=False, ignore_index=True)
 
 # Rating thresholds by redemption type
 def rate_redemption(row):
@@ -56,9 +48,9 @@ filtered["can_afford"] = filtered["miles_required"] <= user_miles
 # -----------------------------
 st.subheader(f"Redemption Options with {user_airline} Miles")
 st.dataframe(
-    filtered[["type", "miles_required", "cash_value", "taxes_fees", "vpm_cents", "rating", "can_afford"]]
+    filtered[["type", "name", "miles_required", "miles_fee", "cash_value", "taxes_fees", "vpm_cents", "rating", "can_afford"]]
     .rename(columns={"vpm_cents": "Value per Mile (¢)"})
-    .style.format({"cash_value": "${:.2f}", "taxes_fees": "${:.2f}", "Value per Mile (¢)": "{:.2f}"})
+    .style.format({"miles_fee": "${:.2f}", "cash_value": "${:.2f}", "taxes_fees": "${:.2f}", "Value per Mile (¢)": "{:.2f}"})
 )
 
 # -----------------------------
@@ -83,4 +75,3 @@ with st.expander("ℹ️ How this works"):
     - We compare flights, hotels, and gift cards to recommend the best use.
     - Thresholds differ by category (flights usually give better value).
     """)
-
