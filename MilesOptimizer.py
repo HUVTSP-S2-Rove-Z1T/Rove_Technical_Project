@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import altair as alt
 
 df = pd.read_csv("VPM_Research.csv")
 
@@ -38,31 +39,69 @@ def rate_redemption(row):
     elif row["type"] == "Hotel":
         return "Good" if row["vpm"] >= 0.010 else "Poor"
     elif row["type"] == "Gift Card":
-        return "Fair" if row["vpm"] >= 0.010 else "Poor"
+        return "Good" if row["vpm"] >= 0.010 else "Poor"
 
 filtered["rating"] = filtered.apply(rate_redemption, axis=1)
 filtered["can_afford"] = filtered["miles_required"] <= user_miles
+affordable = filtered[filtered["can_afford"] == True]
+best_index = affordable["vpm"].idxmax() if not affordable.empty else None
+
+# Conditional highlighting on the df
+def highlight_rating(val):
+    color_map = {
+        "Excellent": "#003c0e",
+        "Good": "#4a3900",
+        "Poor": "#3b0005"
+    }
+    return f"background-color: {color_map.get(val, '')}"
+
+# Added sorting functionality to df
+sort_option = st.selectbox("Sort by", ["Value per Mile (¢)", "Cash Value", "Miles Required"])
+sort_col_map = {
+    "Value per Mile (¢)": "vpm_cents",
+    "Cash Value": "cash_value",
+    "Miles Required": "miles_required"
+}
+filtered = filtered.sort_values(by=sort_col_map[sort_option], ascending=False)
+
+
+
+styled_df = (
+    filtered[["type", "name", "miles_required", "miles_fee", "cash_value", "taxes_fees", "vpm_cents", "rating", "can_afford"]]
+    .rename(columns={"vpm_cents": "Value per Mile (¢)", "rating": "Rating"})
+    .style.format({"miles_fee": "${:.2f}", "cash_value": "${:.2f}", "taxes_fees": "${:.2f}", "Value per Mile (¢)": "{:.2f}"})
+    .map(highlight_rating, subset=["Rating"])
+)
+
 
 # -----------------------------
 # Show table of results
 # -----------------------------
 st.subheader(f"Redemption Options with {user_airline} Miles")
-st.dataframe(
-    filtered[["type", "name", "miles_required", "miles_fee", "cash_value", "taxes_fees", "vpm_cents", "rating", "can_afford"]]
-    .rename(columns={"vpm_cents": "Value per Mile (¢)"})
-    .style.format({"miles_fee": "${:.2f}", "cash_value": "${:.2f}", "taxes_fees": "${:.2f}", "Value per Mile (¢)": "{:.2f}"})
-)
+st.dataframe(styled_df)
 
+# VPM Distribution
+st.subheader("Redemption Value Distribution")
+chart = alt.Chart(filtered).mark_bar().encode(
+    x=alt.X("vpm_cents", bin=True, title="Value per Mile (¢)"),
+    y='count()',
+    color="type"
+).properties(height=300)
+st.altair_chart(chart, use_container_width=True)
 # -----------------------------
 # Best recommendation
 # -----------------------------
-affordable = filtered[filtered["can_afford"] == True]
 
 if affordable.empty:
     st.warning("You don't have enough miles for any available redemption options.")
 else:
     best = affordable.sort_values(by="vpm", ascending=False).iloc[0]
-    st.success(f"✅ **Best Use:** {best['type']} — {best['vpm_cents']:.2f}¢ per mile ({best['rating']})")
+    st.success(
+        f"✅ **Best Use:**\n\n"
+        f"**{best['type']}**: *{best['name']}*\n\n"
+        f"**Value:** {best['vpm_cents']:.2f}¢ per mile ({best['rating']})\n\n"
+        f"**Miles Required:** {int(best['miles_required'])}"
+    )
 
 # -----------------------------
 # Notes
