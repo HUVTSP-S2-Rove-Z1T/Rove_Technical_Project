@@ -1,0 +1,21 @@
+Airline,Layover,Origin,Destination,Travel Date,Cost ($),Miles Awarded
+United Airlines,N/A,JFK,SFO,8/29,320,2586 miles (Direct)
+United Airlines,ORD,JFK,SFO,8/29,245+259 = 504,695+1541 = 2236 miles
+United Airlines,DEN,JFK,SFO,8/29,212+236 = 448,562+1764 = 2326 miles
+United Airlines,IAH,JFK,SFO,8/29,195+239 = 434,845+1961 = 2806 miles
+United Airlines,LAX,JFK,SFO,8/29,160+262 = 422,610+1738 = 2348 miles
+United Airlines,SLC,JFK,SFO,8/29,237+292 = 529,587+1808 = 2395 miles
+United Airlines,LAS,JFK,SFO,8/29,165+294 = 459,615+1606 = 2221 miles
+United Airlines,SEA,JFK,SFO,8/29,206+201 = 407,856+1699 = 2555 miles
+United Airlines,PHX,JFK,SFO,8/29,187+217 = 404,637+1783 = 2420 miles
+United Airlines,MSP,JFK,SFO,8/29,171+266 = 437,921+1634 = 2555 miles
+United Airlines,DTW,JFK,SFO,8/29,219+259 = 478,769+1841 = 2610 miles
+United Airlines,CLE,JFK,SFO,8/29,203+250 = 453,653+1650 = 2303 miles
+United Airlines,BOS,JFK,SFO,8/29,165+234 = 399,915+1966 = 2881 miles
+United Airlines,EWR,JFK,SFO,8/29,153+286 = 439,503+1714 = 2217 miles
+United Airlines,BWI,JFK,SFO,8/29,171+256 = 427,721+1744 = 2465 miles
+United Airlines,RDU,JFK,SFO,8/29,226+271 = 497,776+1629 = 2405 miles
+United Airlines,CVG,JFK,SFO,8/29,224+286 = 510,774+1914 = 2688 miles
+United Airlines,PDX,JFK,SFO,8/29,220+210 = 430,670+1590 = 2260 miles
+United Airlines,SAN,JFK,SFO,8/29,204+259 = 463,754+1641 = 2395 miles
+United Airlines,AUS,JFK,SFO,8/29,237+289 = 526,687+1911 = 2598 miles
