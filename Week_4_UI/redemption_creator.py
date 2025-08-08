@@ -2,57 +2,53 @@ import json
 import random
 import datetime
 
-# Sample realistic data pools
-airports = [
-    "LAX", "JFK", "SFO", "ORD", "ATL", "DFW", "SEA", "MIA",
-    "LHR", "CDG", "FRA", "AMS", "MAD", "VIE", "ZRH", "DOH", "DXB", "NRT", "HND", "SIN", "SYD", "MEL"
-]
-airlines = [
-    "American Airlines", "Delta Air Lines", "United Airlines",
-    "British Airways", "Lufthansa", "Air France", "Emirates",
-    "Qatar Airways", "Singapore Airlines", "ANA", "Qantas"
-]
-cabins = ["Economy", "Premium Economy", "Business", "First"]
+# Seed for reproducibility
+random.seed(42)
 
-def generate_random_flight():
-    origin, destination = random.sample(airports, 2)
-    airline = random.choice(airlines)
-    cabin = random.choice(cabins)
+airports = ['LAX', 'JFK', 'ORD', 'ATL', 'DFW', 'SFO', 'MIA', 'SEA', 'BOS', 'DEN', 'VIE', 'CDG', 'HND', 'DXB']
+airlines = ['United', 'Delta', 'Emirates', 'Lufthansa', 'American', 'Air France']
+cabins = ['Economy', 'Premium Economy', 'Business', 'First Class']
 
-    # Miles based on cabin type and distance estimate
-    distance = random.randint(500, 9000)  # miles
-    base_miles = distance + random.randint(-200, 200)  # add noise
-    cabin_multiplier = {"Economy": 1, "Premium Economy": 1.2, "Business": 2, "First": 3}
-    miles_required = int(base_miles * cabin_multiplier[cabin])
+def random_date(start, end):
+    """Generate random date between start and end"""
+    delta = end - start
+    rand_days = random.randint(0, delta.days)
+    return (start + datetime.timedelta(days=rand_days)).strftime('%Y-%m-%d')
 
-    # Fees based on cabin and airline
-    base_fee = random.uniform(20, 500)  # USD
-    fees = round(base_fee * (1.0 if cabin == "Economy" else 1.3), 2)
+redemptions = []
+num_flights = 220
 
-    # Simulated cash price based on distance, cabin, and airline prestige
-    prestige_multiplier = 1.0 + (airlines.index(airline) % 5) * 0.1
-    cash_price = round(distance * 0.15 * cabin_multiplier[cabin] * prestige_multiplier, 2)
+for i in range(num_flights):
+    origin = random.choice(airports)
+    destination = random.choice([a for a in airports if a != origin])
 
-    # Random travel date in the next 365 days
-    days_ahead = random.randint(1, 365)
-    date = (datetime.date.today() + datetime.timedelta(days=days_ahead)).isoformat()
+    miles = random.randint(1500, 8000)
+    base_fee = random.uniform(5, 75)
+    cabin = random.choices(cabins, weights=[60, 20, 15, 5])[0]
+    cabin_multiplier = {'Economy':1, 'Premium Economy':1.4, 'Business':2.5, 'First Class':3.5}[cabin]
 
-    return {
+    miles = int(miles * cabin_multiplier)
+    fees = round(base_fee * cabin_multiplier, 2)
+    cents_per_mile = random.uniform(0.8, 3.5)
+    cash_value = round(miles * cents_per_mile / 100 + fees, 2)
+    vpm = round(cash_value / miles * 100, 2)
+
+    redemption = {
+        "id": f"FL{i+1:04d}",
         "origin": origin,
         "destination": destination,
-        "airline": airline,
+        "airline": random.choice(airlines),
+        "miles": miles,
+        "fees": f"${fees:.2f}",
         "cabin": cabin,
-        "miles": miles_required,
-        "fees": f"${fees}",
-        "cash_price": cash_price,
-        "date": date
+        "departure_date": random_date(datetime.date.today(), datetime.date.today() + datetime.timedelta(days=180)),
+        "cash_value": cash_value,
+        "vpm": vpm
     }
+    redemptions.append(redemption)
 
-# Generate dataset
-redemptions = [generate_random_flight() for _ in range(250)]  # 250+ flights
-
-# Save to JSON
 with open("redemptions.json", "w") as f:
-    json.dump(redemptions, f, indent=4)
+    json.dump(redemptions, f, indent=2)
 
-print("Generated redemptions.json with", len(redemptions), "flights.")
+print(f"Generated {len(redemptions)} synthetic redemption options in redemptions.json")
+
