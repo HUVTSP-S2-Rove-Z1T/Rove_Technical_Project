@@ -1,0 +1,106 @@
+[
+  {
+    "origin": "LAX",
+    "destination": "JFK",
+    "airline": "Delta",
+    "miles": 12500,
+    "fees": "$84.74",
+    "cabin": "First"
+  },
+  {
+    "origin": "LAX",
+    "destination": "ORD",
+    "airline": "United",
+    "miles": 30000,
+    "fees": "$59.84",
+    "cabin": "Business"
+  },
+  {
+    "origin": "ORD",
+    "destination": "LHR",
+    "airline": "Delta",
+    "miles": 20000,
+    "fees": "$5.99",
+    "cabin": "Economy"
+  },
+  {
+    "origin": "LAX",
+    "destination": "FRA",
+    "airline": "Delta",
+    "miles": 50000,
+    "fees": "$65.73",
+    "cabin": "First"
+  },
+  {
+    "origin": "FRA",
+    "destination": "VIE",
+    "airline": "Delta",
+    "miles": 40000,
+    "fees": "$72.17",
+    "cabin": "First"
+  },
+  {
+    "origin": "JFK",
+    "destination": "LHR",
+    "airline": "United",
+    "miles": 12500,
+    "fees": "$37.18",
+    "cabin": "Economy"
+  },
+  {
+    "origin": "LAX",
+    "destination": "DXB",
+    "airline": "United",
+    "miles": 20000,
+    "fees": "$68.75",
+    "cabin": "Economy"
+  },
+  {
+    "origin": "DXB",
+    "destination": "DEL",
+    "airline": "Lufthansa",
+    "miles": 12500,
+    "fees": "$64.69",
+    "cabin": "Business"
+  },
+  {
+    "origin": "ORD",
+    "destination": "CDG",
+    "airline": "United",
+    "miles": 12500,
+    "fees": "$43.27",
+    "cabin": "Economy"
+  },
+  {
+    "origin": "CDG",
+    "destination": "FCO",
+    "airline": "Lufthansa",
+    "miles": 50000,
+    "fees": "$45.41",
+    "cabin": "Business"
+  },
+  {
+    "origin": "LAX",
+    "destination": "IAH",
+    "airline": "Lufthansa",
+    "miles": 50000,
+    "fees": "$10.48",
+    "cabin": "Economy"
+  },
+  {
+    "origin": "IAH",
+    "destination": "MIA",
+    "airline": "Emirates",
+    "miles": 30000,
+    "fees": "$45.93",
+    "cabin": "Business"
+  },
+  {
+    "origin": "MIA",
+    "destination": "GRU",
+    "airline": "Delta",
+    "miles": 12500,
+    "fees": "$43.61",
+    "cabin": "Economy"
+  }
+]
