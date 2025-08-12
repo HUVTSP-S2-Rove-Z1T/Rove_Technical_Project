@@ -8,7 +8,8 @@ from synthetic_redemption import load_redemptions, find_synthetic_routes
 AIRLINES_WITH_VPM_DATA = ['United', 'Delta', 'Emirates']
 SEARCH_FILTERS = ['Maximize Value', 'Free Wifi', 'Direct Flights Only']
 USER_DB = "user_auth.db"
-REDEMPTIONS_FILE = "redemptions.json"
+REDEMPTIONS_FILE = "Week_4_UI/redemptions.json"
+SEARCHES_SHOWN = 10
 
 # Initialize session state flags
 if 'is_logged_in' not in st.session_state:
@@ -21,6 +22,8 @@ if 'saved_miles_dict' not in st.session_state:
     st.session_state.saved_miles_dict = {airline: 0 for airline in AIRLINES_WITH_VPM_DATA}
 if 'username' not in st.session_state:
     st.session_state.username = None
+if 'search_page' not in st.session_state:
+    st.session_state.search_page = 1
 
 # Create user table if not exists, and add total_savings column if missing
 with sql.connect(USER_DB) as conn:
@@ -101,6 +104,115 @@ def change_mode_creator(new_mode):
     def change_mode():
         st.session_state.mode = new_mode
     return change_mode
+
+def db_table_to_dict(db_filename, table_name, table_columns, table_columns_types):
+    columns_no_types = ''
+    columns_with_types = ''
+    for i in range(len(table_columns)):
+        columns_no_types += table_columns[i]
+        columns_with_types += table_columns[i] + ' ' + table_columns_types[i]
+        if i != len(table_columns) - 1:
+            columns_with_types += ', '
+            columns_no_types += ', '
+    
+    conn = sql.connect(db_filename)
+    c = conn.cursor()
+    c.execute(f'CREATE TABLE IF NOT EXISTS {table_name} (id INTEGER PRIMARY KEY AUTOINCREMENT, {columns_with_types})')
+    conn.commit()
+
+    # Now we actually get the data
+    c.execute(f'SELECT {columns_no_types} FROM {table_name}')
+    rows = c.fetchall()
+
+    conn.close()
+
+    data_dict = {col: [] for col in table_columns}
+    for row in rows:
+        for i, col in enumerate(table_columns):
+            data_dict[col].append(row[i])
+    
+    return data_dict
+
+
+def dict_to_db_table(db_filename, table_name, data_dict):
+    # First we figure out the shape of the table
+    table_columns = list(data_dict.keys())
+    table_columns_types = []
+    for i in range(len(table_columns)):
+        key = table_columns[i]
+        if type(key) == int:
+            table_columns_types.append("INTEGER")
+        elif type(key) == float:
+            table_columns_types.append("FLOAT")
+        else:
+            table_columns[i] = str(key)
+            table_columns_types.append("TEXT")
+
+    columns_no_types = ''
+    columns_with_types = ''
+    for i in range(len(table_columns)):
+        columns_no_types += table_columns[i]
+        columns_with_types += table_columns[i] + ' ' + table_columns_types[i]
+        if i != len(table_columns) - 1:
+            columns_with_types += ', '
+            columns_no_types += ', '
+    
+    conn = sql.connect(db_filename)
+    c = conn.cursor()
+    # Note that it overwrites the previous one
+    c.execute(f'DROP TABLE IF EXISTS {table_name}')
+    c.execute(f'CREATE TABLE {table_name} (id INTEGER PRIMARY KEY AUTOINCREMENT, {columns_with_types})')
+    conn.commit()
+
+    unknown_string = ''
+    for i in range(len(table_columns)):
+        unknown_string += '?'
+        if i != len(table_columns) - 1:
+            unknown_string += ', '
+
+    for i in range(len(data_dict[table_columns[0]])):  # For each row of the table
+        data_append = []
+        for key in table_columns:
+            if type(data_dict[key][i]) == list:
+                data_append.append(str(data_dict[key][i]))
+            else:
+                data_append.append(data_dict[key][i])
+
+        c.execute(f'''
+                INSERT INTO {table_name} ({columns_no_types})
+                VALUES ({unknown_string})
+            ''', data_append)
+        conn.commit()
+
+    conn.close()
+
+
+def add_search_to_history(username, roundtrip=True, origin="LHR", destination="DXB", departure_date=date.today(), return_date=date.today(), passengers=1, cabin_class="Economy"):
+    db_filename = "user_auth.db"
+
+    # We turn the weirder data types into strings
+    if roundtrip:
+        roundtrip = "True"
+        return_date = return_date.strftime("%Y-%m-%d")
+    else:
+        roundtrip = "False"
+        return_date = ""
+    departure_date = departure_date.strftime("%Y-%m-%d")
+    
+    # Now we set up the table
+    table_columns = ["roundtrip", "origin", "destination", "departure_date", "return_date", "passengers", "cabin_class"]
+    table_columns_types = ["TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "INTEGER", "TEXT"]
+    table_name = f"search_history_{username}"
+
+    history_dict = db_table_to_dict(db_filename, table_name, table_columns, table_columns_types)
+
+    data_append = [roundtrip, origin, destination, departure_date, return_date, passengers, cabin_class]
+    for i in range(len(table_columns)):
+        key = table_columns[i]
+        history_dict[key].append(data_append[i])
+    
+    dict_to_db_table(db_filename, table_name, history_dict)
+
 
 # Sidebar navigation
 st.sidebar.header('ROVE :small[:blue[Redemptions]]')
@@ -184,6 +296,9 @@ elif mode == 'Find Flights':
                 st.markdown("---")
 
         if search_clicked:
+            # We quickly save the flight to the search history
+            add_search_to_history(st.session_state.username, roundtrip, origin, destination, departure_date, return_date, passengers, cabin_class)
+
             if not origin or not destination:
                 st.error("Please enter both origin and destination airport codes.")
             else:
@@ -208,24 +323,95 @@ elif mode == 'Profile':
         total_saved = get_user_savings(st.session_state.username)
         st.markdown(f"💰 **Total savings from using Rove:** ${total_saved:.2f}")
 
+        st.header("Flight Search History")
+
+        # Now we set up the table
+        db_filename = "user_auth.db"
+        table_columns = ["roundtrip", "origin", "destination", "departure_date", "return_date", "passengers", "cabin_class"]
+        pretty_columns = ["Roundtrip?", "Origin", "Destination", "Departure date", "Return date", "Passengers", "Cabin Class"]
+        table_columns_types = ["TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "INTEGER", "TEXT"]
+        table_name = f"search_history_{st.session_state.username}"
+
+        history_dict = db_table_to_dict(db_filename, table_name, table_columns, table_columns_types)
+        entries = len(history_dict[table_columns[0]])
+        total_pages = (entries + SEARCHES_SHOWN - 1) // SEARCHES_SHOWN
+
+        if total_pages == 0:
+            st.subheader("No searches found. Go to the \"Find Flights\" page to make your first search!")
+        else:
+            # Remember to sort from most recent to least recent
+            for key in table_columns:
+                history_dict[key].reverse()
+
+            column_widths = [1, 1, 1.5, 1.5, 1, 2]
+
+            name_columns = st.columns(column_widths)
+            for i in range(len(pretty_columns) - 1):
+                true_index = i + 1  # We skip the roundtrip one
+                name_columns[i].markdown(f":small[{pretty_columns[true_index]}]")
+            
+            st.divider()
+
+            search_columns = st.columns(column_widths)
+            start_index = SEARCHES_SHOWN * (st.session_state.search_page - 1)
+            current_index = start_index
+            while current_index < entries and current_index - start_index < SEARCHES_SHOWN:
+                for i in range(len(table_columns) - 1):
+                    true_index = i + 1
+                    key = table_columns[true_index]
+                    if key == "return_date" and history_dict["roundtrip"][current_index] == "False":
+                        search_columns[i].markdown(':x:')
+                    else:
+                        search_columns[i].text(history_dict[key][current_index])
+
+                current_index += 1
+            
+            if current_index == start_index:
+                st.subheader("No searches found. Go to the \"Find Flights\" page to make your first search!")
+            
+            st.divider()
+
+            page_columns = st.columns([1, 2, 1, 2, 1])
+
+            first_page = False
+            last_page = False
+            if st.session_state.search_page == 1:
+                first_page = True
+            if st.session_state.search_page == total_pages:
+                last_page = True
+            
+            if not first_page:
+                prev_button = page_columns[0].button("Previous Page")
+                if prev_button:
+                    st.session_state.search_page -= 1
+                    st.rerun()
+
+            if not last_page:
+                next_button = page_columns[4].button("Next Page")
+                if next_button:
+                    st.session_state.search_page += 1
+                    st.rerun()
+            
+            page_columns[2].text(f"Page {st.session_state.search_page} of {total_pages}")
+
 elif mode == 'Log In':
     st.title('Log In')
     username = st.text_input('Username', key='login_user')
     password = st.text_input('Password', type='password', key='login_pass')
     if st.button("Don't have an account?", key='goto_signup'):
         st.session_state.mode = 'Sign Up'
-        st.experimental_rerun()
+        st.rerun()
     if st.button('Log In', key='login_btn'):
         if log_in(username, password):
             st.session_state.mode = 'Welcome'
-            st.experimental_rerun()
+            st.rerun()
 
 elif mode == 'Log Out':
     st.session_state.is_logged_in = False
     st.session_state.user_type = 'guest'
     st.session_state.username = None
     st.session_state.mode = 'Welcome'
-    st.experimental_rerun()
+    st.rerun()
 
 elif mode == 'Sign Up':
     st.title('Sign Up')
@@ -233,8 +419,8 @@ elif mode == 'Sign Up':
     password = st.text_input('Password', type='password', key='signup_pass')
     if st.button("Already have an account?", key='goto_login'):
         st.session_state.mode = 'Log In'
-        st.experimental_rerun()
+        st.rerun()
     if st.button('Sign Up', key='signup_btn'):
         if sign_up(username, password):
             st.session_state.mode = 'Welcome'
-            st.experimental_rerun()
+            st.rerun()
