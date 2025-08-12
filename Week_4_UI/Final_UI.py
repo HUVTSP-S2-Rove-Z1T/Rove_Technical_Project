@@ -8,7 +8,7 @@ from synthetic_redemption import load_redemptions, find_synthetic_routes
 AIRLINES_WITH_VPM_DATA = ['United', 'Delta', 'Emirates']
 SEARCH_FILTERS = ['Maximize Value', 'Free Wifi', 'Direct Flights Only']
 USER_DB = "user_auth.db"
-REDEMPTIONS_FILE = "Week_4_UI/redemptions.json"
+REDEMPTIONS_FILE = "redemptions.json"
 SEARCHES_SHOWN = 10
 
 # Initialize session state flags
@@ -89,16 +89,7 @@ def get_user_savings(username):
         if result:
             return result[0]
         return 0
-
-def update_user_savings(username, added_savings):
-    if not username:
-        return
-    with sql.connect(USER_DB) as conn:
-        cur = conn.cursor()
-        current = get_user_savings(username)
-        new_total = current + added_savings
-        cur.execute('UPDATE users SET total_savings = ? WHERE username = ?', (new_total, username))
-        conn.commit()
+    
 
 def change_mode_creator(new_mode):
     def change_mode():
@@ -213,6 +204,36 @@ def add_search_to_history(username, roundtrip=True, origin="LHR", destination="D
     
     dict_to_db_table(db_filename, table_name, history_dict)
 
+def reset_savings(username):
+    with sql.connect(USER_DB) as conn:
+        cur = conn.cursor()
+        cur.execute('UPDATE users SET total_savings = 0 WHERE username = ?', (username,))
+        conn.commit()
+    st.session_state['message'] = "Your savings have been reset to $0.00."
+
+def display_message():
+    st.toast(st.session_state['message'])
+    del st.session_state['message']
+
+def reset_password(old_password, new_password):
+    if not old_password or not new_password:
+        st.error('Please enter both old and new passwords.')
+        return
+    if len(new_password) < 8:
+        st.error('New password must be at least 8 characters long.')
+        return
+    with sql.connect(USER_DB) as conn:
+        cur = conn.cursor()
+        user = cur.execute('SELECT * FROM users WHERE username = ?', (st.session_state.username,)).fetchone()
+        if not bc.checkpw(old_password.encode('utf8'), user[1]):
+            st.error('Old password is incorrect.')
+        elif bc.checkpw(new_password.encode('utf8'), user[1]):
+            st.error('New password cannot be the same as the old password.')
+        else:
+            hashed = bc.hashpw(new_password.encode('utf8'), bc.gensalt())
+            cur.execute('UPDATE users SET password = ? WHERE username = ?', (hashed, st.session_state.username))
+            st.success('Password changed successfully.')
+        conn.commit()
 
 # Sidebar navigation
 st.sidebar.header('ROVE :small[:blue[Redemptions]]')
@@ -225,6 +246,9 @@ else:
     st.sidebar.button('Log Out', on_click=change_mode_creator('Log Out'))
 
 mode = st.session_state.mode
+
+if 'message' in st.session_state:
+    display_message()
 
 if mode == 'Welcome':
     col1, col2 = st.columns([1,3])
@@ -275,6 +299,8 @@ elif mode == 'Find Flights':
 
         search_clicked = st.button('Search!')
 
+
+
         def show_synthetic_card(option, idx):
             with st.container():
                 cols = st.columns([5, 2])
@@ -287,13 +313,21 @@ elif mode == 'Find Flights':
                     if option.get('highlight'):
                         st.markdown(f"**💡 Highlights:** {' | '.join(option['highlight'])}")
                     st.markdown(f"**Airlines:** {', '.join(option['airlines'])}")
-                with cols[1]:
-                    if st.button("Select", key=f"select_{idx}"):
-                        # Update savings when user selects this option
-                        savings_val = float(option.get('total_cash', '0').replace('$',''))  # assuming total_cash is string like '$123'
-                        update_user_savings(st.session_state.username, savings_val)
-                        st.success(f"Selected route saved! You saved ${savings_val:.2f} on this redemption.")
+                with cols[1]: 
+                    if st.button("Select", key=f"select_{idx}", on_click=lambda: select_redemption(synthetic_results[idx], idx)):
+                        pass
                 st.markdown("---")
+
+                
+        def select_redemption(option, i):
+            with sql.connect(USER_DB) as conn:
+                cur = conn.cursor()
+                current = get_user_savings(st.session_state.username)
+                new_total = current + float(option['total_cash'][1:])
+                cur.execute('UPDATE users SET total_savings = ? WHERE username = ?', (new_total, st.session_state.username))
+                conn.commit()
+            st.session_state['message'] = f"You selected option {option['route']}! Your profile has been updated with your savings."
+
 
         if search_clicked:
             # We quickly save the flight to the search history
@@ -314,6 +348,8 @@ elif mode == 'Find Flights':
                 except FileNotFoundError:
                     st.error(f"Redemptions data file '{REDEMPTIONS_FILE}' not found.")
 
+
+
 elif mode == 'Profile':
     if not st.session_state.is_logged_in:
         st.title("Please log in to view your profile.")
@@ -322,7 +358,7 @@ elif mode == 'Profile':
         st.markdown(f"### Welcome, **{st.session_state.username}**!")
         total_saved = get_user_savings(st.session_state.username)
         st.markdown(f"💰 **Total savings from using Rove:** ${total_saved:.2f}")
-
+        st.button('Reset Savings', on_click=lambda: reset_savings(st.session_state.username))
         st.header("Flight Search History")
 
         # Now we set up the table
@@ -393,6 +429,11 @@ elif mode == 'Profile':
                     st.rerun()
             
             page_columns[2].text(f"Page {st.session_state.search_page} of {total_pages}")
+        st.header("Change Password")
+        old_password = st.text_input('Old Password', type='password', key='old_pass')
+        new_password = st.text_input('New Password', type='password', key='new_pass')
+        if st.button('Change Password', key='change_pass_btn'):
+            reset_password(old_password, new_password)
 
 elif mode == 'Log In':
     st.title('Log In')
