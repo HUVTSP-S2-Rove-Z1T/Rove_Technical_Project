@@ -18,9 +18,67 @@ import pandas as pd
 # have an example award chart to draw from). Once we have those, all we need to do is hook up this library to "Week_4_UI.py", and we'll get real
 # recommendations.
 
+DATABASE_COLUMNS = ["origin", "destination", "passengers", "cabin_class", "departure_date", "departure_time", "departure_arrival_time", "return_date", "return_time", "return_arrival_time", "airline_name", "airline_code", "order_id", "departure_slice_id", "return_slice_id", "departure_segment_ids", "return_segment_ids", "departure_segments", "return_segments", "total_amount", "estimated_price_in_miles", "overall_value", "total_currency", "duffel_call_time"]
+DATABASE_COLUMNS_TYPES = ["TEXT", "TEXT", "INTEGER", "TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "REAL", "REAL", "REAL", "TEXT", "TEXT"]
+
+KEY_NUMBER = len(DATABASE_COLUMNS)
+UNKNOWN_STRING = ''
+COLUMNS_AS_ONE_STRING = ''
+COLUMNS_WITH_TYPES_AS_ONE_STRING = ''
+for i in range(KEY_NUMBER):
+    UNKNOWN_STRING += '?'
+    COLUMNS_AS_ONE_STRING += DATABASE_COLUMNS[i]
+    COLUMNS_WITH_TYPES_AS_ONE_STRING += DATABASE_COLUMNS[i] + ' ' + DATABASE_COLUMNS_TYPES[i]
+    if i != KEY_NUMBER - 1:
+        UNKNOWN_STRING += ', '
+        COLUMNS_AS_ONE_STRING += ', '
+        COLUMNS_WITH_TYPES_AS_ONE_STRING += ', '
+
 
 CALL_UNIT_KEYS = ["origin", "destination", "passengers", "cabin_class", "departure_date", "return_date"]
 LIST_AS_STRING_KEYS = ["departure_segment_ids", "return_segment_ids", "departure_segments", "return_segments"]
+
+AVERAGE_VPM_BY_AIRLINE = {
+    "AS" : 1.3,
+    "AA" : 1.6,
+    "DL" : 1.2,
+    "F9" : 1.5,
+    "HA" : 1.0,
+    "B6" : 1.5,
+    "WN" : 1.3,
+    "NK" : 1.3,
+    "UA" : 1.2,
+    "AC" : 1.1,
+    "AV" : 1.6,
+    "BA" : 1.2,
+    "AF" : 0.8,
+    "TK" : 0.7,
+    "VS" : 1.4,
+    "EK" : 0.6,
+}
+DEFAULT_VPM = 1
+
+PERCEIVED_VALUE_BY_AIRLINE = {
+    "AS" : 1.5,
+    "AA" : 2,
+    "DL" : 1.5,
+    "F9" : 1,
+    "HA" : 1.5,
+    "B6" : 1.2,
+    "WN" : 1.2,
+    "NK" : 1,
+    "UA" : 1.5,
+    "AC" : 2,
+    "AV" : 1.2,
+    "BA" : 1.5,
+    "AF" : 2,
+    "TK" : 2,
+    "VS" : 1.5,
+    "EK" : 3,
+}
+DEFAULT_PERCEIVED_VALUE = 1
+
+PARTNER_AIRLINES_IATA = list(AVERAGE_VPM_BY_AIRLINE.keys())
 
 
 # Just for viewing purposes, for debugging
@@ -32,54 +90,25 @@ def save_dict_to_csv(data_dict, output_file='master_flight_list_test.csv'):
 def turn_master_flight_db_into_dict(database_name='master_flight_list.db'):
     conn = sqlite3.connect(database_name)
     c = conn.cursor()
-    c.execute('''
+
+    c.execute(f'''
         CREATE TABLE IF NOT EXISTS flights (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            origin TEXT,
-            destination TEXT,
-            passengers INTEGER,
-            cabin_class TEXT,
-            date TEXT,
-            departure_date TEXT,
-            departure_time TEXT,
-            departure_arrival_time TEXT,
-            return_date TEXT,
-            return_time TEXT,
-            return_arrival_time TEXT,
-            airline_name TEXT,
-            airline_code TEXT,
-            order_id TEXT,
-            departure_slice_id TEXT,
-            return_slice_id TEXT,
-            departure_segment_ids TEXT,
-            return_segment_ids TEXT,
-            departure_segments TEXT,
-            return_segments TEXT,
-            total_amount REAL,
-            total_currency TEXT,
-            duffel_call_time TEXT
+            {COLUMNS_WITH_TYPES_AS_ONE_STRING}
         )
     ''')
     conn.commit()
 
-    columns = ["origin", "destination", "passengers", "cabin_class", "departure_date", "departure_time", "departure_arrival_time", "return_date", "return_time", "return_arrival_time", "airline_name", "airline_code", "order_id", "departure_slice_id", "return_slice_id", "departure_segment_ids", "return_segment_ids", "departure_segments", "return_segments", "total_amount", "total_currency", "duffel_call_time"]
-    key_number = len(columns)
-
-    columns_as_one_string = ''
-    for i in range(len(columns)):
-        columns_as_one_string += columns[i]
-        if i != key_number - 1:
-            columns_as_one_string += ', '
 
 
     # Now we get all the flights currently in the database
-    c.execute(f'SELECT {columns_as_one_string} FROM flights')
+    c.execute(f'SELECT {COLUMNS_AS_ONE_STRING} FROM flights')
     rows = c.fetchall()
 
     # Convert to dictionary format similar to previous CSV logic
-    data_dict = {col: [] for col in columns}
+    data_dict = {col: [] for col in DATABASE_COLUMNS}
     for row in rows:
-        for i, col in enumerate(columns):
+        for i, col in enumerate(DATABASE_COLUMNS):
             data_dict[col].append(row[i])
 
     for list_key in LIST_AS_STRING_KEYS:
@@ -235,30 +264,9 @@ def combine_packed_flight_arrays(flight_array_list):
 # The output of this function is called "packed format", and it is how "master_flight_list.db" is structured
 def get_dict_for_route(origin, destination, passengers, cabin_class, departure_date_str, return_date_str=None):
     # "duffel_call_time" is when we actually make the call
-    data_saved = {
-        "origin": [],
-        "destination": [],
-        "passengers": [],
-        "cabin_class": [],
-        "departure_date": [],
-        "departure_time": [],
-        "departure_arrival_time": [],
-        "return_date": [],
-        "return_time": [],
-        "return_arrival_time": [],
-        "airline_name": [],
-        "airline_code": [],
-        "order_id": [],
-        "departure_slice_id": [],
-        "return_slice_id": [],
-        "departure_segment_ids": [],
-        "return_segment_ids": [],
-        "departure_segments": [],
-        "return_segments": [],
-        "total_amount": [],
-        "total_currency": [],
-        "duffel_call_time": []
-    }
+    data_saved = {}
+    for key in DATABASE_COLUMNS:
+        data_saved[key] = []
 
     data_saved_keys = list(data_saved.keys())
 
@@ -303,6 +311,7 @@ def get_dict_for_route(origin, destination, passengers, cabin_class, departure_d
 
     if offers:
         for offer in offers:
+            "estimated_price_in_miles", "overall_value"
 
             departure_time = offer["slices"][0]["segments"][0]["departing_at"]
             departure_arrival_time = offer["slices"][0]["segments"][-1]["arriving_at"]
@@ -324,6 +333,14 @@ def get_dict_for_route(origin, destination, passengers, cabin_class, departure_d
                 departure_segments_str.append(leg_pair)
 
             total_amount = offer["total_amount"]
+            total_amount_float = float(total_amount)
+            if airline_code in PARTNER_AIRLINES_IATA:
+                estimated_price_in_miles = str(round(total_amount_float * 100 / AVERAGE_VPM_BY_AIRLINE[airline_code]))
+                overall_value = str(round(total_amount_float / PERCEIVED_VALUE_BY_AIRLINE[airline_code], 2))
+            else:
+                estimated_price_in_miles = str(round(total_amount_float * 100 / DEFAULT_VPM))
+                overall_value = str(round(total_amount_float / DEFAULT_PERCEIVED_VALUE, 2))
+
             total_currency = offer["total_currency"]
             duffel_call_time = offer["created_at"]
 
@@ -378,6 +395,8 @@ def get_dict_for_route(origin, destination, passengers, cabin_class, departure_d
                             departure_segments_str,
                             return_segments_str,
                             total_amount,
+                            estimated_price_in_miles,
+                            overall_value,
                             total_currency,
                             duffel_call_time]
 
@@ -398,8 +417,7 @@ def add_flights_to_master_flight_list(flight_array, overwrite_previous_calls=Tru
     # Connecting to the database
     data_dict = turn_master_flight_db_into_dict(database_name)
 
-    columns = list(data_dict.keys())
-    key_number = len(columns)
+    DATABASE_COLUMNS
     
     # Now we delete outdated info
     if overwrite_previous_calls:
@@ -428,12 +446,12 @@ def add_flights_to_master_flight_list(flight_array, overwrite_previous_calls=Tru
         # Actually deleting them
         for i in range(len(deletion_index_list)):  # For each flight in the master list
             current_index = len(deletion_index_list) - 1 - i  # We work backwards when popping
-            for key in columns:
+            for key in DATABASE_COLUMNS:
                 data_dict[key].pop(deletion_index_list[current_index])
     
     # Finally, we add the new flights
     for i in range(len(flight_array[call_unit_keys[0]])):  # For each flight in flight_array
-        for key in columns:
+        for key in DATABASE_COLUMNS:
             data_dict[key].append(flight_array[key][i])
     
     # And save it
@@ -444,29 +462,17 @@ def add_flights_to_master_flight_list(flight_array, overwrite_previous_calls=Tru
                 DELETE FROM flights
             ''')
 
-    columns_as_one_string = ''
-    for i in range(len(columns)):
-        columns_as_one_string += columns[i]
-        if i != key_number - 1:
-            columns_as_one_string += ', '
-
-    unknown_string = ''
-    for i in range(key_number):
-        unknown_string += '?'
-        if i != key_number - 1:
-            unknown_string += ', '
-
     for i in range(len(data_dict[call_unit_keys[0]])):  # For each flight in the master list
         data_append = []
-        for key in columns:
+        for key in DATABASE_COLUMNS:
             if type(data_dict[key][i]) == list:
                 data_append.append(str(data_dict[key][i]))
             else:
                 data_append.append(data_dict[key][i])
 
         c.execute(f'''
-                INSERT INTO flights ({columns_as_one_string})
-                VALUES ({unknown_string})
+                INSERT INTO flights ({COLUMNS_AS_ONE_STRING})
+                VALUES ({UNKNOWN_STRING})
             ''', data_append)
         conn.commit()
 
@@ -550,17 +556,24 @@ def get_all_valid_leg_orders(root_origin, root_destination, leg_list):
                 # Then the itinerary is valid so far but incomplete
                 append_zero(current_leg_indices)
                 increment_until_change(current_leg_indices)
+    
+    # Now we turn the indices back into the real legs when we return it
 
-    return all_valid_leg_orders
+    valid_leg_orders_unindexed = []
+    for leg_order in all_valid_leg_orders:
+        valid_leg_orders_unindexed.append([])
+        for index in leg_order:
+            valid_leg_orders_unindexed[-1].append(leg_list[index])
+
+    return valid_leg_orders_unindexed
 
 
 # This calls all the possible routings from Duffel
 def get_dict_for_all_possible_routings(origin, destination, passengers, cabin_class, departure_date_str, return_date_str=None):
     whole_flights = get_dict_for_route(origin, destination, passengers, cabin_class, departure_date_str, return_date_str=return_date_str)
-    columns = list(whole_flights.keys())
 
     final_flight_array = {}
-    for key in columns:
+    for key in DATABASE_COLUMNS:
         final_flight_array[key] = []
     
     # We make sure to add whole_flights to the master list if it isn't there
@@ -574,7 +587,7 @@ def get_dict_for_all_possible_routings(origin, destination, passengers, cabin_cl
     relevant_departure_segments = []
     relevant_return_segments = []
     
-    for i in range(len(whole_flights[columns[0]])):  # For every whole flight found
+    for i in range(len(whole_flights[DATABASE_COLUMNS[0]])):  # For every whole flight found
         flight_segments = whole_flights['departure_segments'][i]
         if len(flight_segments) > 1 or return_date_str:  # We don't need to check direct flights if it is one way, we've already done that
             for i in range(len(flight_segments)):
@@ -595,7 +608,6 @@ def get_dict_for_all_possible_routings(origin, destination, passengers, cabin_cl
 
     # We call them all and add them to final_flight_array. Only one way flights for synthetic routing
     for segment in all_relevant_segments:
-        print(segment)
         all_flights_in_segment = get_dict_for_route(segment[0], segment[1], passengers, cabin_class, departure_date_str)
         final_flight_array = combine_packed_flight_arrays([final_flight_array, all_flights_in_segment])
     
@@ -605,7 +617,6 @@ def get_dict_for_all_possible_routings(origin, destination, passengers, cabin_cl
 # This looks for the segments, to be able to do synthetic routing. Different from "call_all_possible_routings()" because it only looks in the master list, doesn't call new ones. Also finds possible leg orderings
 def find_possible_routings_from_master_list(origin, destination, passengers, cabin_class, departure_date_str, return_date_str=None, database_name='master_flight_list.db'):
     data_dict = turn_master_flight_db_into_dict(database_name=database_name)
-    columns = list(data_dict.keys())
 
     call_units_in_master = get_all_call_unit_keys_in_dict(data_dict)
 
@@ -621,7 +632,7 @@ def find_possible_routings_from_master_list(origin, destination, passengers, cab
         relevant_departure_segments = []
         relevant_return_segments = []
         
-        for i in range(len(data_dict[columns[0]])):  # For every flight in the master list
+        for i in range(len(data_dict[DATABASE_COLUMNS[0]])):  # For every flight in the master list
             same_call_unit = True
             for call_unit_key in CALL_UNIT_KEYS:
                 if data_dict[call_unit_key][i] != whole_call_unit[CALL_UNIT_KEYS.index(call_unit_key)]:  # If any of the details of the flight differ
@@ -646,38 +657,38 @@ def find_possible_routings_from_master_list(origin, destination, passengers, cab
         
         # Now we actually find the flights we need, not just their origins and destinations. We only look at one way flights for synthetic routing
         inbetween_departure_flights = {}
-        for key in columns:
+        for key in DATABASE_COLUMNS:
             inbetween_departure_flights[key] = []
         
         for segment in relevant_departure_segments:
             wanted_call_unit = [segment[0], segment[1], passengers, cabin_class, departure_date_str, ""]
 
-            for i in range(len(data_dict[columns[0]])):  # For every flight in the master list
+            for i in range(len(data_dict[DATABASE_COLUMNS[0]])):  # For every flight in the master list
                 same_call_unit = True
                 for call_unit_key in CALL_UNIT_KEYS:
                     if data_dict[call_unit_key][i] != wanted_call_unit[CALL_UNIT_KEYS.index(call_unit_key)]:  # If any of the details of the flight differ
                         same_call_unit = False
                 
                 if same_call_unit:
-                    for key in columns:
+                    for key in DATABASE_COLUMNS:
                         inbetween_departure_flights[key].append(data_dict[key][i])
         
         if return_date_str:
             inbetween_return_flights = {}
-            for key in columns:
+            for key in DATABASE_COLUMNS:
                 inbetween_return_flights[key] = []
             
             for segment in relevant_return_segments:
                 wanted_call_unit = [segment[0], segment[1], passengers, cabin_class, return_date_str, ""]
 
-                for i in range(len(data_dict[columns[0]])):  # For every flight in the master list
+                for i in range(len(data_dict[DATABASE_COLUMNS[0]])):  # For every flight in the master list
                     same_call_unit = True
                     for call_unit_key in CALL_UNIT_KEYS:
                         if data_dict[call_unit_key][i] != wanted_call_unit[CALL_UNIT_KEYS.index(call_unit_key)]:  # If any of the details of the flight differ
                             same_call_unit = False
                     
                     if same_call_unit:
-                        for key in columns:
+                        for key in DATABASE_COLUMNS:
                             inbetween_return_flights[key].append(data_dict[key][i])
         
         # And we unpack the flights according to their origin and destination (the passengers, cabin class, and dates will be the same across them all), and start looking for synthetic routings
@@ -686,7 +697,7 @@ def find_possible_routings_from_master_list(origin, destination, passengers, cab
         dep_leg_list = []
         for origin_destination in list(inbetween_dep.keys()):
             dep_leg_list.append(origin_destination)
-        
+
         dep_all_leg_orders = get_all_valid_leg_orders(origin, destination, dep_leg_list)
 
 
@@ -739,5 +750,24 @@ save_dict_to_csv(departure_dict, 'test_departure_synthetic_routing_segments.csv'
 print('All leg orders for the departure:', result[1])
 save_dict_to_csv(return_dict, 'test_return_synthetic_routing_segments.csv')
 print('All leg orders for the return:', result[3])
+
+
+
+
+
+# lhr_dxb = get_dict_for_route('LHR', 'DXB', 2, 'economy', '2025-08-07', return_date_str='2025-08-14')
+# lhr_jfk = get_dict_for_route('LHR', 'JFK', 2, 'first', '2025-08-07', return_date_str='2025-08-14')
+
+# total_list = combine_packed_flight_arrays([lhr_dxb, lhr_jfk])
+
+
+# add_flights_to_master_flight_list(total_list)
+
+# save_dict_to_csv(turn_master_flight_db_into_dict())
+
+
+
+
+
 
 
