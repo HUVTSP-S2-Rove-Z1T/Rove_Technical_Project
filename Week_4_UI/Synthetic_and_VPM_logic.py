@@ -9,15 +9,6 @@ import pandas as pd
 
 # This uses "master_flight_list.db" to store its information
 
-# @CHASE: the main function is "find_possible_routings_from_master_list()". This searches the master list of flights for all the flights that
-# match segments of the trip from point A to point B, and also tells you which combinations of those segments actually get you to your destination.
-# If you run the test code I left below, you'll see more clearly when you look at the output CSV files.
-# You can solve it a different way if it makes sense, but I was thinking that what we need now is a few functions that take in the output of
-# "find_possible_routings_from_master_list()" and return the top 5-10 options based on some criterion, like "best value" or just "cheapest", or
-# any of the other ones we've discussed (most importantly, ones that let the user use their miles, but that will be easier once we
-# have an example award chart to draw from). Once we have those, all we need to do is hook up this library to "Week_4_UI.py", and we'll get real
-# recommendations.
-
 DATABASE_COLUMNS = ["origin", "destination", "passengers", "cabin_class", "departure_date", "departure_time", "departure_arrival_time", "return_date", "return_time", "return_arrival_time", "airline_name", "airline_code", "order_id", "departure_slice_id", "return_slice_id", "departure_segment_ids", "return_segment_ids", "departure_segments", "return_segments", "total_amount", "estimated_price_in_miles", "overall_value", "total_currency", "duffel_call_time"]
 DATABASE_COLUMNS_TYPES = ["TEXT", "TEXT", "INTEGER", "TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "TEXT", "REAL", "REAL", "REAL", "TEXT", "TEXT"]
 
@@ -1382,6 +1373,9 @@ def get_useful_info_of_top_n_sorted_flights(n, sort_mode, origin, destination, p
 
 if __name__ == "__main__":
     lhr_dxb_all_routings = get_dict_for_all_possible_routings('LHR', 'DXB', 2, 'first', '2025-08-14', return_date_str='2025-08-21')
+    add_flights_to_master_flight_list(lhr_dxb_all_routings)
+
     useful_dict = get_useful_info_of_top_n_sorted_flights(100, "cheapest", 'LHR', 'DXB', 2, 'first', '2025-08-14', return_date_str='2025-08-21')
 
     save_dict_to_csv(useful_dict, 'test_useful_dict.csv')
+
