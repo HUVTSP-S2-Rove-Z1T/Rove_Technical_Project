@@ -21,24 +21,25 @@ CABIN_CLASS_FANCY_TO_BASIC = {
     'First Class' : 'first'
 }
 
-# Graphics for later
-for i in range(FLIGHTS_SHOWN):
-    name = "container_background" + str(i)
+# This was kind of messing with the UI, just commenting it out for now
+# # Graphics for later
+# for i in range(FLIGHTS_SHOWN):
+#     name = "container_background" + str(i)
 
-    dark_or_light = st.context.theme.type
+#     dark_or_light = st.context.theme.type
 
-    if i % 2 == 0:
-        if dark_or_light == 'light':
-            color = "#EEEEEE"
-        else:
-            color = "#222222"
-    else:
-        if dark_or_light == 'light':
-            color = "#DDDDDD"
-        else:
-            color = "#333333"
+#     if i % 2 == 0:
+#         if dark_or_light == 'light':
+#             color = "#EEEEEE"
+#         else:
+#             color = "#222222"
+#     else:
+#         if dark_or_light == 'light':
+#             color = "#DDDDDD"
+#         else:
+#             color = "#333333"
 
-    st.markdown("<style> .st-key-" + name + " {background-color: " + color + ";} </style>", unsafe_allow_html=True)
+#     st.markdown("<style> .st-key-" + name + " {background-color: " + color + ";} </style>", unsafe_allow_html=True)
 
     
 
