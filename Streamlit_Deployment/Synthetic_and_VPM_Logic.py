@@ -1,6 +1,4 @@
 import sqlite3
-import os
-from dotenv import load_dotenv
 from datetime import date, timedelta
 import requests
 import time
@@ -296,8 +294,7 @@ def get_dict_for_route(origin, destination, passengers, cabin_class, departure_d
 
     data_saved_keys = list(data_saved.keys())
 
-    load_dotenv()
-    access_token = os.getenv("ACCESS_TOKEN")
+    access_token = "duffel_test_0hhjFKDZZskobddilp6wH6oQd-fQWp0U3Mdv-3eogXN"
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json",
