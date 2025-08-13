@@ -70,22 +70,22 @@ PERCEIVED_VALUE_BY_AIRLINE = {
 DEFAULT_PERCEIVED_VALUE = 1
 
 AIRLINE_CODE_TO_NAME = {
-    "AS" : 1.5,
-    "AA" : 2,
-    "DL" : 1.5,
-    "F9" : 1,
-    "HA" : 1.5,
-    "B6" : 1.2,
-    "WN" : 1.2,
-    "NK" : 1,
-    "UA" : 1.5,
-    "AC" : 2,
-    "AV" : 1.2,
-    "BA" : 1.5,
-    "AF" : 2,
-    "TK" : 2,
-    "VS" : 1.5,
-    "EK" : 3,
+    "AS" : "Alaska Airlines",
+    "AA" : "American Airlines",
+    "DL" : "Delta Airlines",
+    "F9" : "Frontier Airlines",
+    "HA" : "Hawaiian Airlines",
+    "B6" : "JetBlue Airways",
+    "WN" : "Southwest Airlines",
+    "NK" : "Spirit Airlines",
+    "UA" : "United Airlines",
+    "AC" : "Air Canada",
+    "AV" : "Avianca",
+    "BA" : "British Airways",
+    "AF" : "Air France",
+    "TK" : "Turkish Airlines",
+    "VS" : "Virgin Atlantic",
+    "EK" : "Emirates Airlines",
 }
 
 PARTNER_AIRLINES_IATA = list(AVERAGE_VPM_BY_AIRLINE.keys())
@@ -842,7 +842,7 @@ def get_sort_indices(sort_list):
     return iterable
 
 
-def sort_dict_by_one_list(main_dict, sort_key):
+def sort_dict_by_one_list(main_dict, sort_key, reverse=False):
     new_dict = {}
     key_list = list(main_dict.keys())
 
@@ -851,9 +851,67 @@ def sort_dict_by_one_list(main_dict, sort_key):
     for key in key_list:
         new_dict[key] = []
         for i in range(len(main_dict[key])):
-            new_dict[key].append(main_dict[key][sort_indices[i]])
+            if not reverse:
+                new_dict[key].append(main_dict[key][sort_indices[i]])
+            else:
+                backwards_index = len(main_dict[key]) - 1 - i
+                new_dict[key].append(main_dict[key][sort_indices[backwards_index]])
     
     return new_dict
+
+
+
+def sort_dict_by_lists_sequentially(main_dict, sort_key_list, reverse=False):
+    new_dict_pieces = [main_dict]
+    key_list = list(main_dict.keys())
+
+    for i in range(len(sort_key_list)):
+        this_sort_key = sort_key_list[i]
+
+        old_dict_pieces = new_dict_pieces
+        new_dict_pieces = []
+        for dict_piece in old_dict_pieces:
+            sort_indices = get_sort_indices(dict_piece[this_sort_key])
+
+            sorted_piece = {}
+            for key in key_list:
+                sorted_piece[key] = []
+                for j in range(len(dict_piece[key])):
+                    if not reverse:
+                        sorted_piece[key].append(dict_piece[key][sort_indices[j]])
+                    else:
+                        backwards_index = len(dict_piece[key]) - 1 - j
+                        sorted_piece[key].append(dict_piece[key][sort_indices[backwards_index]])
+            
+            gathering_dict = {}
+            for j in range(len(sorted_piece[this_sort_key])):
+                item = sorted_piece[this_sort_key][j]
+                if item not in list(gathering_dict.keys()):
+                    gathering_dict[item] = []
+                
+                gathering_dict[item].append(j)
+            
+            for item in list(gathering_dict.keys()):
+                temp_dict = {}
+                for key in key_list:
+                    temp_dict[key] = []
+                
+                for index in gathering_dict[item]:
+                    for key in key_list:
+                        temp_dict[key].append(sorted_piece[key][index])
+
+                new_dict_pieces.append(temp_dict)
+    
+    final_dict = {}
+    for key in key_list:
+        final_dict[key] = []
+    
+    for i in range(len(new_dict_pieces)):
+        final_dict = combine_packed_flight_arrays([final_dict, new_dict_pieces[i]])
+    
+    return final_dict
+
+
 
 
 def get_all_lists_of_length_n_with_base_b(b, n):
@@ -1182,14 +1240,20 @@ def get_dicts_of_top_n_sorted_all_types_flights(n, sort_key, origin, destination
 def get_useful_info_of_top_n_sorted_flights(n, sort_mode, origin, destination, passengers, cabin_class, departure_date_str, return_date_str=None, only_flights_with_award_airlines=False, airlines_with_miles=None, deleted_airlines=IGNORED_AIRLINES, database_name='master_flight_list.db'):
     useful_dict = {
         "is_synthetic" : [],
+        "unique_id" : [],
         "dep_segments_str" : [],
-        "dep_airlines" : [],
+        "dep_airline_codes" : [],
+        "dep_airline_names" : [],
         "dep_time" : [],
         "ret_segments_str" : [],
-        "ret_airlines" : [],
+        "ret_airline_codes" : [],
+        "ret_airline_names" : [],
         "ret_time" : [],
         "cash_price" : [],
-        "miles_price_by_airline_or_cash" : []
+        "miles_price_by_airline_or_cash" : [],
+        "vpm" : [],
+        "overall_value" : [],
+        "average_perceived_value": []
     }
 
     if sort_mode == "cheapest":
@@ -1219,8 +1283,11 @@ def get_useful_info_of_top_n_sorted_flights(n, sort_mode, origin, destination, p
                 is_synthetic = True
             
             dep_segments_str = []
-            dep_airlines = []
+            dep_airline_codes = []
+            dep_airline_names = []
             cash_price = 0
+            overall_value = 0
+            unique_id = ""
             miles_price_by_airline_or_cash = {}
             for i in range(len(this_dep_dict[DATABASE_COLUMNS[0]])):
                 flight_segments = this_dep_dict["departure_segments"][i]
@@ -1232,9 +1299,14 @@ def get_useful_info_of_top_n_sorted_flights(n, sort_mode, origin, destination, p
                 dep_segments_str.append(constructing_str)
 
                 airline_code = this_dep_dict["airline_code"][i]
-                dep_airlines.append(airline_code)
+                dep_airline_codes.append(airline_code)
+                airline_name = this_dep_dict["airline_name"][i]
+                dep_airline_names.append(airline_name)
 
                 cash_price += this_dep_dict["total_amount"][i]
+                overall_value += this_dep_dict["overall_value"][i]
+
+                unique_id += this_dep_dict["order_id"][i]
 
                 if airline_code in airlines_with_miles:
                     if airline_code not in list(miles_price_by_airline_or_cash.keys()):
@@ -1250,17 +1322,22 @@ def get_useful_info_of_top_n_sorted_flights(n, sort_mode, origin, destination, p
             dep_time = this_dep_dict["departure_time"][0]
 
             ret_segments_str = None
-            ret_airlines = None
+            ret_airline_codes = None
+            ret_airline_names = None
             ret_time = None
 
             useful_dict["is_synthetic"].append(is_synthetic)
             useful_dict["dep_segments_str"].append(dep_segments_str)
-            useful_dict["dep_airlines"].append(dep_airlines)
+            useful_dict["dep_airline_codes"].append(dep_airline_codes)
+            useful_dict["dep_airline_names"].append(dep_airline_names)
             useful_dict["dep_time"].append(dep_time)
             useful_dict["ret_segments_str"].append(ret_segments_str)
-            useful_dict["ret_airlines"].append(ret_airlines)
+            useful_dict["ret_airline_codes"].append(ret_airline_codes)
+            useful_dict["ret_airline_names"].append(ret_airline_names)
             useful_dict["ret_time"].append(ret_time)
+            useful_dict["unique_id"].append(unique_id)
             useful_dict["cash_price"].append(cash_price)
+            useful_dict["overall_value"].append(overall_value)
             useful_dict["miles_price_by_airline_or_cash"].append(miles_price_by_airline_or_cash)
     else:
         for i in range(len(final_departure_list)):
@@ -1275,8 +1352,11 @@ def get_useful_info_of_top_n_sorted_flights(n, sort_mode, origin, destination, p
 
 
             dep_segments_str = []
-            dep_airlines = []
+            dep_airline_codes = []
+            dep_airline_names = []
             cash_price = 0
+            overall_value = 0
+            unique_id = ""
             miles_price_by_airline_or_cash = {}
             for i in range(len(this_dep_dict[DATABASE_COLUMNS[0]])):
                 flight_segments = this_dep_dict["departure_segments"][i]
@@ -1288,9 +1368,14 @@ def get_useful_info_of_top_n_sorted_flights(n, sort_mode, origin, destination, p
                 dep_segments_str.append(constructing_str)
 
                 airline_code = this_dep_dict["airline_code"][i]
-                dep_airlines.append(airline_code)
+                dep_airline_codes.append(airline_code)
+                airline_name = this_dep_dict["airline_name"][i]
+                dep_airline_names.append(airline_name)
 
                 cash_price += this_dep_dict["total_amount"][i]
+                overall_value += this_dep_dict["overall_value"][i]
+
+                unique_id += this_dep_dict["order_id"][i]
 
                 if airline_code in airlines_with_miles:
                     if airline_code not in list(miles_price_by_airline_or_cash.keys()):
@@ -1308,7 +1393,8 @@ def get_useful_info_of_top_n_sorted_flights(n, sort_mode, origin, destination, p
 
             if is_synthetic:
                 ret_segments_str = []
-                ret_airlines = []
+                ret_airline_codes = []
+                ret_airline_names = []
                 for i in range(len(this_ret_dict[DATABASE_COLUMNS[0]])):
                     flight_segments = this_ret_dict["departure_segments"][i]
                     constructing_str = ""
@@ -1319,9 +1405,14 @@ def get_useful_info_of_top_n_sorted_flights(n, sort_mode, origin, destination, p
                     ret_segments_str.append(constructing_str)
 
                     airline_code = this_ret_dict["airline_code"][i]
-                    ret_airlines.append(airline_code)
+                    ret_airline_codes.append(airline_code)
+                    airline_name = this_ret_dict["airline_name"][i]
+                    ret_airline_names.append(airline_name)
 
                     cash_price += this_ret_dict["total_amount"][i]
+                    overall_value += this_ret_dict["overall_value"][i]
+
+                    unique_id += this_ret_dict["order_id"][i]
 
                     if airline_code in airlines_with_miles:
                         if airline_code not in list(miles_price_by_airline_or_cash.keys()):
@@ -1337,7 +1428,8 @@ def get_useful_info_of_top_n_sorted_flights(n, sort_mode, origin, destination, p
                 ret_time = this_ret_dict["departure_time"][0]
             else:
                 ret_segments_str = []
-                ret_airlines = []
+                ret_airline_codes = []
+                ret_airline_names = []
                 for i in range(len(this_dep_dict[DATABASE_COLUMNS[0]])):
                     flight_segments = this_dep_dict["return_segments"][i]
                     constructing_str = ""
@@ -1348,7 +1440,11 @@ def get_useful_info_of_top_n_sorted_flights(n, sort_mode, origin, destination, p
                     ret_segments_str.append(constructing_str)
 
                     airline_code = this_dep_dict["airline_code"][i]
-                    ret_airlines.append(airline_code)
+                    ret_airline_codes.append(airline_code)
+                    airline_name = this_dep_dict["airline_name"][i]
+                    ret_airline_names.append(airline_name)
+
+                    unique_id += this_dep_dict["order_id"][i]
 
                     # Already handled cash, don't need it again
                     
@@ -1356,13 +1452,58 @@ def get_useful_info_of_top_n_sorted_flights(n, sort_mode, origin, destination, p
 
             useful_dict["is_synthetic"].append(is_synthetic)
             useful_dict["dep_segments_str"].append(dep_segments_str)
-            useful_dict["dep_airlines"].append(dep_airlines)
+            useful_dict["dep_airline_codes"].append(dep_airline_codes)
+            useful_dict["dep_airline_names"].append(dep_airline_names)
             useful_dict["dep_time"].append(dep_time)
             useful_dict["ret_segments_str"].append(ret_segments_str)
-            useful_dict["ret_airlines"].append(ret_airlines)
+            useful_dict["ret_airline_codes"].append(ret_airline_codes)
+            useful_dict["ret_airline_names"].append(ret_airline_names)
             useful_dict["ret_time"].append(ret_time)
+            useful_dict["unique_id"].append(unique_id)
             useful_dict["cash_price"].append(cash_price)
+            useful_dict["overall_value"].append(overall_value)
             useful_dict["miles_price_by_airline_or_cash"].append(miles_price_by_airline_or_cash)
+    
+    print('Extra')
+
+    # Now we do vpm and similar ones
+    for i in range(len(useful_dict["is_synthetic"])):
+        miles_sum = 0
+
+        for code in airlines_with_miles:
+            if code in list(useful_dict["miles_price_by_airline_or_cash"][i].keys()):
+                code_miles = round(useful_dict['miles_price_by_airline_or_cash'][i][code])
+                miles_sum += code_miles
+
+        if miles_sum == 0:
+            useful_dict["vpm"].append(0)
+        else:
+
+            if 'cash' in list(useful_dict["miles_price_by_airline_or_cash"][i].keys()):
+                cash_remainder = useful_dict['miles_price_by_airline_or_cash'][i]['cash']
+                value = useful_dict["cash_price"][i] - cash_remainder
+            else:
+                value = useful_dict["cash_price"][i]
+            
+            vpm = value / miles_sum * 100
+            useful_dict["vpm"].append(vpm)
+
+    for i in range(len(useful_dict["is_synthetic"])):
+        if useful_dict["ret_airline_codes"]:
+            airline_code_list = useful_dict["dep_airline_codes"][i] + useful_dict["ret_airline_codes"][i]
+        else:
+            airline_code_list = useful_dict["dep_airline_codes"][i]
+        
+        perceived_sum = 0
+        for code in airline_code_list:
+            if code in list(PERCEIVED_VALUE_BY_AIRLINE.keys()):
+                perceived_sum += PERCEIVED_VALUE_BY_AIRLINE[code]
+            else:
+                perceived_sum += DEFAULT_PERCEIVED_VALUE
+        
+        perceived_average = perceived_sum / len(airline_code_list)
+
+        useful_dict["average_perceived_value"].append(perceived_average)
     
     return useful_dict
 
@@ -1378,4 +1519,8 @@ if __name__ == "__main__":
     useful_dict = get_useful_info_of_top_n_sorted_flights(100, "cheapest", 'LHR', 'DXB', 2, 'first', '2025-08-14', return_date_str='2025-08-21')
 
     save_dict_to_csv(useful_dict, 'test_useful_dict.csv')
+
+    see_db = turn_master_flight_db_into_dict()
+    save_dict_to_csv(see_db, "see_db.csv")
+
 
