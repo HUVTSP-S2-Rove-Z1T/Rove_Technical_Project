@@ -78,8 +78,28 @@ PERCEIVED_VALUE_BY_AIRLINE = {
 }
 DEFAULT_PERCEIVED_VALUE = 1
 
+AIRLINE_CODE_TO_NAME = {
+    "AS" : 1.5,
+    "AA" : 2,
+    "DL" : 1.5,
+    "F9" : 1,
+    "HA" : 1.5,
+    "B6" : 1.2,
+    "WN" : 1.2,
+    "NK" : 1,
+    "UA" : 1.5,
+    "AC" : 2,
+    "AV" : 1.2,
+    "BA" : 1.5,
+    "AF" : 2,
+    "TK" : 2,
+    "VS" : 1.5,
+    "EK" : 3,
+}
+
 PARTNER_AIRLINES_IATA = list(AVERAGE_VPM_BY_AIRLINE.keys())
 
+IGNORED_AIRLINES = ["ZZ"]
 
 # Just for viewing purposes, for debugging
 def save_dict_to_csv(data_dict, output_file='master_flight_list_test.csv'):
@@ -119,6 +139,21 @@ def turn_master_flight_db_into_dict(database_name='master_flight_list.db'):
                 list_key_values[i] = json.loads(list_key_with_double_quotes)  # Remember that list mutability will carry the changes to "data_dict"
     
     return data_dict
+
+
+def airline_code_to_name(code):
+    try:
+        return AIRLINE_CODE_TO_NAME[code]
+    except:
+        raise IndexError("Not an airline in the dictionary")
+
+
+def airline_name_to_code(name):
+    for key in list(AIRLINE_CODE_TO_NAME.keys()):
+        if AIRLINE_CODE_TO_NAME[key] == name:
+            return key
+        
+    raise IndexError("Not an airline in the dictionary")
 
 
 def call_flight_offers(headers, data):
@@ -311,8 +346,6 @@ def get_dict_for_route(origin, destination, passengers, cabin_class, departure_d
 
     if offers:
         for offer in offers:
-            "estimated_price_in_miles", "overall_value"
-
             departure_time = offer["slices"][0]["segments"][0]["departing_at"]
             departure_arrival_time = offer["slices"][0]["segments"][-1]["arriving_at"]
 
@@ -568,6 +601,37 @@ def get_all_valid_leg_orders(root_origin, root_destination, leg_list):
     return valid_leg_orders_unindexed
 
 
+# This gets flights from the db
+def find_flights_in_master_list(origin, destination, passengers, cabin_class, departure_date_str, return_date_str=None, database_name='master_flight_list.db'):
+    flight_array = {}
+    for key in DATABASE_COLUMNS:
+        flight_array[key] = []
+    
+    data_dict = turn_master_flight_db_into_dict(database_name=database_name)
+
+    call_units_in_master = get_all_call_unit_keys_in_dict(data_dict)
+
+    if not return_date_str:
+        return_date_str = ""
+    
+    whole_call_unit = [origin, destination, passengers, cabin_class, departure_date_str, return_date_str]
+
+    if whole_call_unit not in call_units_in_master:
+        raise FileNotFoundError("The whole flight is not in the master list; add it before synthetic routings can be found")
+    else:
+        for i in range(len(data_dict[DATABASE_COLUMNS[0]])):  # For every flight in the master list
+            same_call_unit = True
+            for call_unit_key in CALL_UNIT_KEYS:
+                if data_dict[call_unit_key][i] != whole_call_unit[CALL_UNIT_KEYS.index(call_unit_key)]:  # If any of the details of the flight differ
+                    same_call_unit = False
+            
+            if same_call_unit:
+                for key in DATABASE_COLUMNS:
+                    flight_array[key].append(data_dict[key][i])
+    
+    return flight_array
+
+
 # This calls all the possible routings from Duffel
 def get_dict_for_all_possible_routings(origin, destination, passengers, cabin_class, departure_date_str, return_date_str=None):
     whole_flights = get_dict_for_route(origin, destination, passengers, cabin_class, departure_date_str, return_date_str=return_date_str)
@@ -590,25 +654,27 @@ def get_dict_for_all_possible_routings(origin, destination, passengers, cabin_cl
     for i in range(len(whole_flights[DATABASE_COLUMNS[0]])):  # For every whole flight found
         flight_segments = whole_flights['departure_segments'][i]
         if len(flight_segments) > 1 or return_date_str:  # We don't need to check direct flights if it is one way, we've already done that
-            for i in range(len(flight_segments)):
-                considered_leg = flight_segments[i]
+            for j in range(len(flight_segments)):
+                considered_leg = flight_segments[j]
 
                 if considered_leg not in relevant_departure_segments:
                     relevant_departure_segments.append(considered_leg)
         
         if return_date_str:  # If it is roundtrip
             flight_segments = whole_flights['return_segments'][i]
-            for i in range(len(flight_segments)):
-                considered_leg = flight_segments[i]
+            for j in range(len(flight_segments)):
+                considered_leg = flight_segments[j]
 
                 if considered_leg not in relevant_return_segments:
                     relevant_return_segments.append(considered_leg)
 
-    all_relevant_segments = relevant_departure_segments + relevant_return_segments
-
     # We call them all and add them to final_flight_array. Only one way flights for synthetic routing
-    for segment in all_relevant_segments:
+    for segment in relevant_departure_segments:
         all_flights_in_segment = get_dict_for_route(segment[0], segment[1], passengers, cabin_class, departure_date_str)
+        final_flight_array = combine_packed_flight_arrays([final_flight_array, all_flights_in_segment])
+    
+    for segment in relevant_return_segments:
+        all_flights_in_segment = get_dict_for_route(segment[0], segment[1], passengers, cabin_class, return_date_str)
         final_flight_array = combine_packed_flight_arrays([final_flight_array, all_flights_in_segment])
     
     return final_flight_array
@@ -639,18 +705,17 @@ def find_possible_routings_from_master_list(origin, destination, passengers, cab
                     same_call_unit = False
 
             if same_call_unit:  # Then we add its segments to the list
-                flight_segments = data_dict['departure_segments'][i]
-                if len(flight_segments) > 1 or return_date_str:  # We don't need to check direct flights if it is one way, we've already done that
-                    for i in range(len(flight_segments)):
-                        considered_leg = flight_segments[i]
+                flight_segments = data_dict['departure_segments'][i]  # We include whole flights
+                for j in range(len(flight_segments)):
+                    considered_leg = flight_segments[j]
 
-                        if considered_leg not in relevant_departure_segments:
-                            relevant_departure_segments.append(considered_leg)
+                    if considered_leg not in relevant_departure_segments:
+                        relevant_departure_segments.append(considered_leg)
                 
                 if return_date_str:  # If it is roundtrip
                     flight_segments = data_dict['return_segments'][i]
-                    for i in range(len(flight_segments)):
-                        considered_leg = flight_segments[i]
+                    for j in range(len(flight_segments)):
+                        considered_leg = flight_segments[j]
 
                         if considered_leg not in relevant_return_segments:
                             relevant_return_segments.append(considered_leg)
@@ -716,39 +781,607 @@ def find_possible_routings_from_master_list(origin, destination, passengers, cab
         return [inbetween_dep, dep_all_leg_orders, inbetween_ret, ret_all_leg_orders]
         
 
+def delete_unchosen_airline_flights(unpacked_flight_array, chosen_airlines_IATA):
+    # Note this uses an "unpacked" flight array, so the keys will be like "(LHR, DXB)"
+    if not unpacked_flight_array:
+        print("Error, empty flight array")
+        return None
+
+    trimmed_dict = {}
+    outer_keys = list(unpacked_flight_array.keys())
+    inner_keys = list(unpacked_flight_array[outer_keys[0]].keys())
+    for key in outer_keys:
+        trimmed_dict[key] = {}
+        for inner_key in inner_keys:
+            trimmed_dict[key][inner_key] = []
+
+        for i in range(len(unpacked_flight_array[key]["airline_code"])):
+            if unpacked_flight_array[key]["airline_code"][i] in chosen_airlines_IATA:
+                for inner_key in inner_keys:
+                    trimmed_dict[key][inner_key].append(unpacked_flight_array[key][inner_key][i])
+    
+    return trimmed_dict
+
+
+# This to get rid of the fake "Duffel Airways" flights
+def delete_chosen_airline_flights(unpacked_flight_array, chosen_airlines_IATA):
+    # Note this uses an "unpacked" flight array, so the keys will be like "(LHR, DXB)"
+    if not unpacked_flight_array:
+        print("Error, empty flight array")
+        return None
+
+    trimmed_dict = {}
+    outer_keys = list(unpacked_flight_array.keys())
+    inner_keys = list(unpacked_flight_array[outer_keys[0]].keys())
+    for key in outer_keys:
+        trimmed_dict[key] = {}
+        for inner_key in inner_keys:
+            trimmed_dict[key][inner_key] = []
+
+        for i in range(len(unpacked_flight_array[key]["airline_code"])):
+            if unpacked_flight_array[key]["airline_code"][i] not in chosen_airlines_IATA:
+                for inner_key in inner_keys:
+                    trimmed_dict[key][inner_key].append(unpacked_flight_array[key][inner_key][i])
+    
+    return trimmed_dict
+
+
+
+def get_sort_indices(sort_list):
+    list_copy = sort_list.copy()
+    iterable = []
+    for i in range(len(list_copy)):
+        iterable.append(i)
+    
+    current_index = 1
+    while current_index < len(list_copy):
+        if list_copy[current_index] < list_copy[current_index - 1]:
+            old = list_copy[current_index]
+            list_copy[current_index] = list_copy[current_index - 1]
+            list_copy[current_index - 1] = old
+
+            old_index = iterable[current_index]
+            iterable[current_index] = iterable[current_index - 1]
+            iterable[current_index - 1] = old_index
+            if current_index > 1:
+                current_index -= 1
+        else:
+            current_index += 1
+    
+    return iterable
+
+
+def sort_dict_by_one_list(main_dict, sort_key):
+    new_dict = {}
+    key_list = list(main_dict.keys())
+
+    sort_indices = get_sort_indices(main_dict[sort_key])
+
+    for key in key_list:
+        new_dict[key] = []
+        for i in range(len(main_dict[key])):
+            new_dict[key].append(main_dict[key][sort_indices[i]])
+    
+    return new_dict
+
+
+def get_all_lists_of_length_n_with_base_b(b, n):
+    all_lists = []
+    starter_list = [0] * n
+
+    while starter_list != [b - 1] * n:
+        all_lists.append(starter_list.copy())
+        if starter_list[-1] == b - 1:
+            search_index = -2
+            while True:
+                if starter_list[search_index] == b - 1:
+                    search_index -= 1
+                else:
+                    break
+            starter_list[search_index] += 1
+            fill_index = search_index + 1
+            while fill_index < 0:
+                starter_list[fill_index] = 0
+                fill_index += 1
+        else:
+            starter_list[-1] += 1
+    
+    all_lists.append(starter_list.copy())
+    
+    return all_lists
 
 
 
 
+def get_top_n_flight_combos(unpacked_flight_array, n, all_leg_orders, sort_key):
+    # We sort the list
+    all_flight_keys = list(unpacked_flight_array.keys())
+    for key in all_flight_keys:
+        unpacked_flight_array[key] = sort_dict_by_one_list(unpacked_flight_array[key], sort_key)
+
+    total_itineraries = len(all_leg_orders)
+    itinerary_min_list = [0] * total_itineraries
+    itinerary_base_list = [1] * total_itineraries
+    tapped_out_itineraries = [False] * total_itineraries
+
+    itinerary_attempted_search_indices = []
+    for i in range(len(all_leg_orders)):
+        itinerary_attempted_search_indices.append([])
+
+    indexing_dicts = {
+        "key_lists" : [],
+        "index_lists" : [],
+        "values" : [],
+    }
+
+    while len(indexing_dicts["key_lists"]) < n and False in tapped_out_itineraries:
+        last_least_itinerary_value = min(itinerary_min_list)
+        last_least_itinerary_index = itinerary_min_list.index(last_least_itinerary_value)
+        while tapped_out_itineraries[last_least_itinerary_index]:
+            itinerary_min_list[last_least_itinerary_index] = max(itinerary_min_list) + 1000000  # We just don't want to choose this itinerary again
+
+            last_least_itinerary_value = min(itinerary_min_list)
+            last_least_itinerary_index = itinerary_min_list.index(last_least_itinerary_value)
+
+        current_leg_order = all_leg_orders[last_least_itinerary_index]
+
+        # We figure out which untried combination results in the cheapest total
+        all_leg_flight_index_combos = get_all_lists_of_length_n_with_base_b(itinerary_base_list[last_least_itinerary_index], len(current_leg_order))
+
+        untried_combos = []
+        matching_values = []
+        for i in range(len(all_leg_flight_index_combos)):
+            current_combo = all_leg_flight_index_combos[i]
+            if current_combo not in itinerary_attempted_search_indices[last_least_itinerary_index]:
+                indices_too_high = False
+                for j in range(len(current_combo)):
+                    if current_combo[j] >= len(unpacked_flight_array[current_leg_order[j]][sort_key]):
+                        indices_too_high = True
+
+                if not indices_too_high:
+                    value_sum = 0
+                    for j in range(len(current_combo)):
+                        key_flight_dict = unpacked_flight_array[current_leg_order[j]]
+                        value_contribution = key_flight_dict[sort_key][current_combo[j]]
+                        value_sum += value_contribution
+                    
+                    untried_combos.append(current_combo)
+                    matching_values.append(value_sum)
+        
+        if len(untried_combos) == 0:
+            tapped_out = True
+            for attempt in itinerary_attempted_search_indices[last_least_itinerary_index]:
+                if itinerary_base_list[last_least_itinerary_index] - 1 in attempt:
+                    tapped_out = False
+            
+            if tapped_out:
+                tapped_out_itineraries[last_least_itinerary_index] = True
+            else:
+                itinerary_base_list[last_least_itinerary_index] += 1
+        else:
+            min_combo_index = matching_values.index(min(matching_values))
+
+            indexing_dicts["key_lists"].append([])
+            indexing_dicts["index_lists"].append([])
+            indexing_dicts["values"].append(matching_values[min_combo_index])
+
+            for i in range(len(current_leg_order)):
+                indexing_dicts["key_lists"][-1].append(current_leg_order[i])
+                indexing_dicts["index_lists"][-1].append(untried_combos[min_combo_index][i])
+            
+            itinerary_min_list[last_least_itinerary_index] = matching_values[min_combo_index]
+            itinerary_attempted_search_indices[last_least_itinerary_index].append(untried_combos[min_combo_index])
+    
+    return indexing_dicts
 
 
+def get_top_n_dep_ret_combos(dep_indexing_dicts, ret_indexing_dicts, n):
+    # We sort the lists
+    dep_indexing_dicts = sort_dict_by_one_list(dep_indexing_dicts, "values")
+    dep_length = len(dep_indexing_dicts["values"])
+    ret_indexing_dicts = sort_dict_by_one_list(ret_indexing_dicts, "values")
+    ret_length = len(ret_indexing_dicts["values"])
+    tapped_out = False
+
+    current_base = 1
+
+    attempted_search_indices = []
+
+    dep_ret_pairs = {
+        "dep_key_lists" : [],
+        "dep_index_lists" : [],
+        "ret_key_lists" : [],
+        "ret_index_lists" : [],
+        "values" : [],
+    }
+
+    while len(dep_ret_pairs["values"]) < n and not tapped_out:
+        all_index_combos = get_all_lists_of_length_n_with_base_b(current_base, 2)
+
+        untried_combos = []
+        matching_values = []
+        for i in range(len(all_index_combos)):
+            current_combo = all_index_combos[i]
+            a = current_combo[0]
+            b = current_combo[1]
+            if current_combo not in attempted_search_indices:
+                if a < dep_length and b < ret_length:
+                    value_sum = dep_indexing_dicts["values"][a] + ret_indexing_dicts["values"][b]
+                    
+                    untried_combos.append(current_combo)
+                    matching_values.append(value_sum)
+        
+        if len(untried_combos) == 0:
+            tapped_out = True
+            for attempt in attempted_search_indices:
+                if current_base - 1 in attempt:
+                    tapped_out = False
+            current_base += 1
+        else:
+            min_combo_index = matching_values.index(min(matching_values))
+
+            a = untried_combos[min_combo_index][0]
+            b = untried_combos[min_combo_index][1]
+            dep_ret_pairs["dep_key_lists"].append(dep_indexing_dicts["key_lists"][a])
+            dep_ret_pairs["dep_index_lists"].append(dep_indexing_dicts["index_lists"][a])
+            dep_ret_pairs["ret_key_lists"].append(ret_indexing_dicts["key_lists"][b])
+            dep_ret_pairs["ret_index_lists"].append(ret_indexing_dicts["index_lists"][b])
+            dep_ret_pairs["values"].append(matching_values[min_combo_index])
+            
+            
+            attempted_search_indices.append(untried_combos[min_combo_index])
+    
+    return dep_ret_pairs
+        
+
+def get_dicts_of_top_n_sorted_synthetic_flights(n, sort_key, origin, destination, passengers, cabin_class, departure_date_str, return_date_str=None, deleted_airlines=None, kept_airlines=None, database_name='master_flight_list.db'):
+    result = find_possible_routings_from_master_list(origin, destination, passengers, cabin_class, departure_date_str, return_date_str=return_date_str, database_name=database_name)
+
+    full_departure_list = []
+    full_return_list = []
+
+    departure_dict = result[0]
+    dep_leg_orders = result[1]
+    return_dict = result[2]
+    ret_leg_orders = result[3]
+
+    # First we do any trimming of the dicts
+    if deleted_airlines:
+        departure_dict = delete_chosen_airline_flights(departure_dict, deleted_airlines)
+        return_dict = delete_chosen_airline_flights(return_dict, deleted_airlines)
+    if kept_airlines:
+        departure_dict = delete_unchosen_airline_flights(departure_dict, kept_airlines)
+        return_dict = delete_unchosen_airline_flights(return_dict, kept_airlines)
 
 
+    for i in range(len(dep_leg_orders)):
+        dep_leg_orders[i] = tuple(dep_leg_orders[i])
+    for i in range(len(ret_leg_orders)):
+        ret_leg_orders[i] = tuple(ret_leg_orders[i])
+    
+    full_values_list = []
+    dep_indexing_dicts = get_top_n_flight_combos(departure_dict, n, dep_leg_orders, sort_key)
+    if return_date_str:
+        ret_indexing_dicts = get_top_n_flight_combos(return_dict, n, ret_leg_orders, sort_key)
+
+        dep_ret_pairs = get_top_n_dep_ret_combos(dep_indexing_dicts, ret_indexing_dicts, n)
+        dep_ret_pairs = sort_dict_by_one_list(dep_ret_pairs, "values")
+
+        inner_dep_keys = list(departure_dict[dep_leg_orders[0][0]].keys())
+        inner_ret_keys = list(return_dict[ret_leg_orders[0][0]].keys())
+
+        for i in range(len(dep_ret_pairs["values"])):
+            this_departure_dict = {}
+            for key in dep_ret_pairs["dep_key_lists"][i]:
+                this_departure_dict[key] = {}
+                for inner_key in inner_dep_keys:
+                    this_departure_dict[key][inner_key] = []
+            
+            this_return_dict = {}
+            for key in dep_ret_pairs["ret_key_lists"][i]:
+                this_return_dict[key] = {}
+                for inner_key in inner_ret_keys:
+                    this_return_dict[key][inner_key] = []
+            
+            for j in range(len(dep_ret_pairs["dep_key_lists"][i])):
+                current_key = dep_ret_pairs["dep_key_lists"][i][j]
+                for inner_key in inner_dep_keys:
+                    this_departure_dict[current_key][inner_key].append(departure_dict[current_key][inner_key][dep_ret_pairs["dep_index_lists"][i][j]])
+
+            for j in range(len(dep_ret_pairs["ret_key_lists"][i])):
+                current_key = dep_ret_pairs["ret_key_lists"][i][j]
+                for inner_key in inner_ret_keys:
+                    this_return_dict[current_key][inner_key].append(return_dict[current_key][inner_key][dep_ret_pairs["ret_index_lists"][i][j]])
+            
+            this_departure_dict_repacked = repack_flight_array(this_departure_dict, ("origin", "destination"))
+            this_return_dict_repacked = repack_flight_array(this_return_dict, ("origin", "destination"))
+
+            full_departure_list.append(this_departure_dict_repacked)
+            full_return_list.append(this_return_dict_repacked)
+
+            full_values_list.append(dep_ret_pairs["values"][i])
+    else:
+
+        dep_indexing_dicts = sort_dict_by_one_list(dep_indexing_dicts, "values")
+        inner_dep_keys = list(departure_dict[dep_leg_orders[0][0]].keys())
+
+        for i in range(len(dep_indexing_dicts["values"])):
+            this_departure_dict = {}
+            for key in dep_indexing_dicts["key_lists"][i]:
+                this_departure_dict[key] = {}
+                for inner_key in inner_dep_keys:
+                    this_departure_dict[key][inner_key] = []
+            
+            for j in range(len(dep_indexing_dicts["key_lists"][i])):
+                current_key = dep_indexing_dicts["key_lists"][i][j]
+                for inner_key in inner_dep_keys:
+                    this_departure_dict[current_key][inner_key].append(departure_dict[current_key][inner_key][dep_indexing_dicts["index_lists"][i][j]])
+            
+            this_departure_dict_repacked = repack_flight_array(this_departure_dict, ("origin", "destination"))
+
+            full_departure_list.append(this_departure_dict_repacked)
+            this_return_dict = None
+            full_return_list.append(this_return_dict)
+
+            full_values_list.append(dep_indexing_dicts["values"][i])
+    
+    return [full_departure_list, full_return_list, full_values_list]
+    
+    
+# The difference between this and "get_dicts_of_top_n_sorted_synthetic_flights" is that this includes whole flights for roundtrip bookings
+def get_dicts_of_top_n_sorted_all_types_flights(n, sort_key, origin, destination, passengers, cabin_class, departure_date_str, return_date_str=None, deleted_airlines=None, kept_airlines=None, database_name='master_flight_list.db'):
+    result = get_dicts_of_top_n_sorted_synthetic_flights(n, sort_key, origin, destination, passengers, cabin_class, departure_date_str, return_date_str=return_date_str, deleted_airlines=deleted_airlines, kept_airlines=kept_airlines, database_name=database_name)
+
+    if not return_date_str:
+        return result
+    else:
+        full_departure_list = result[0]
+        full_return_list = result[1]
+        full_values_list = result[2]
+
+        synthetic_dict = {
+            "dep_list" : full_departure_list,
+            "ret_list" : full_return_list,
+            "values" : full_values_list,
+        }
+
+        all_whole_flights = find_flights_in_master_list(origin, destination, passengers, cabin_class, departure_date_str, return_date_str=return_date_str)
+        unpacked_whole_flights = unpack_flight_array(all_whole_flights, ("origin", "destination"))
+        # Make sure to remove any undesired airlines
+        if deleted_airlines:
+            unpacked_whole_flights = delete_chosen_airline_flights(unpacked_whole_flights, deleted_airlines)
+        if kept_airlines:
+            unpacked_whole_flights = delete_unchosen_airline_flights(unpacked_whole_flights, kept_airlines)
+
+        all_whole_flights = repack_flight_array(unpacked_whole_flights, ("origin", "destination"))
+        # And sort
+        all_whole_flights = sort_dict_by_one_list(all_whole_flights, sort_key)
+
+        whole_dict = {
+            "dep_list" : [],
+            "ret_list" : [],
+            "values" : [],
+        }
+
+        for i in range(len(all_whole_flights[DATABASE_COLUMNS[0]])):  # For flight in "all_whole_flights"
+            dep_list_dict = {}
+            for key in DATABASE_COLUMNS:
+                dep_list_dict[key] = [all_whole_flights[key][i]]
+            
+            whole_dict["dep_list"].append(dep_list_dict)
+            whole_dict["ret_list"].append(None)
+            whole_dict["values"].append(dep_list_dict[sort_key][0])
+
+        combined_dict = combine_packed_flight_arrays([synthetic_dict, whole_dict])  # The function is badly named, it is very general
+
+        sorted_dict = sort_dict_by_one_list(combined_dict, "values")
+        truncated_dict = {}
+        for key in list(sorted_dict.keys()):
+            truncated_dict[key] = sorted_dict[key][:n]
+        
+
+        final_departure_list = truncated_dict["dep_list"]
+        final_return_list = truncated_dict["ret_list"]
+        final_values_list = truncated_dict["values"]
+    
+        return [final_departure_list, final_return_list, final_values_list]
+    
+    
+# "sort_mode" can be: "cheapest", "overall_value"
+def get_useful_info_of_top_n_sorted_flights(n, sort_mode, origin, destination, passengers, cabin_class, departure_date_str, return_date_str=None, only_flights_with_award_airlines=False, airlines_with_miles=None, deleted_airlines=IGNORED_AIRLINES, database_name='master_flight_list.db'):
+    useful_dict = {
+        "is_synthetic" : [],
+        "dep_segments_str" : [],
+        "dep_airlines" : [],
+        "dep_time" : [],
+        "ret_segments_str" : [],
+        "ret_airlines" : [],
+        "ret_time" : [],
+        "cash_price" : [],
+        "miles_price_by_airline_or_cash" : []
+    }
+
+    if sort_mode == "cheapest":
+        sort_key = "total_amount"
+    if sort_mode == "overall_value":
+        sort_key = "overall_value"
+
+    if only_flights_with_award_airlines:
+        kept_airlines = airlines_with_miles
+    else:
+        kept_airlines = None
+    
+    if not airlines_with_miles:
+        airlines_with_miles = []
+    
+    sorted_flights_result = get_dicts_of_top_n_sorted_all_types_flights(n, sort_key, origin, destination, passengers, cabin_class, departure_date_str, return_date_str=return_date_str, deleted_airlines=deleted_airlines, kept_airlines=kept_airlines, database_name=database_name)
+    final_departure_list = sorted_flights_result[0]
+    final_return_list = sorted_flights_result[1]
+    final_values_list = sorted_flights_result[2]
+    
+    if not return_date_str:
+        for i in range(len(final_departure_list)):
+            this_dep_dict = final_departure_list[i]
+            if len(this_dep_dict[DATABASE_COLUMNS[0]]) == 1:
+                is_synthetic = False
+            else:
+                is_synthetic = True
+            
+            dep_segments_str = []
+            dep_airlines = []
+            cash_price = 0
+            miles_price_by_airline_or_cash = {}
+            for i in range(len(this_dep_dict[DATABASE_COLUMNS[0]])):
+                flight_segments = this_dep_dict["departure_segments"][i]
+                constructing_str = ""
+                for leg in flight_segments:
+                    constructing_str += leg[0] + " -> "
+                constructing_str += flight_segments[-1][-1]
+
+                dep_segments_str.append(constructing_str)
+
+                airline_code = this_dep_dict["airline_code"][i]
+                dep_airlines.append(airline_code)
+
+                cash_price += this_dep_dict["total_amount"][i]
+
+                if airline_code in airlines_with_miles:
+                    if airline_code not in list(miles_price_by_airline_or_cash.keys()):
+                        miles_price_by_airline_or_cash[airline_code] = 0
+                    
+                    miles_price_by_airline_or_cash[airline_code] += this_dep_dict["estimated_price_in_miles"][i]
+                else:
+                    if "cash" not in list(miles_price_by_airline_or_cash.keys()):
+                        miles_price_by_airline_or_cash["cash"] = 0
+                    
+                    miles_price_by_airline_or_cash["cash"] += this_dep_dict["total_amount"][i]
+                
+            dep_time = this_dep_dict["departure_time"][0]
+
+            ret_segments_str = None
+            ret_airlines = None
+            ret_time = None
+
+            useful_dict["is_synthetic"].append(is_synthetic)
+            useful_dict["dep_segments_str"].append(dep_segments_str)
+            useful_dict["dep_airlines"].append(dep_airlines)
+            useful_dict["dep_time"].append(dep_time)
+            useful_dict["ret_segments_str"].append(ret_segments_str)
+            useful_dict["ret_airlines"].append(ret_airlines)
+            useful_dict["ret_time"].append(ret_time)
+            useful_dict["cash_price"].append(cash_price)
+            useful_dict["miles_price_by_airline_or_cash"].append(miles_price_by_airline_or_cash)
+    else:
+        for i in range(len(final_departure_list)):
+            this_dep_dict = final_departure_list[i]
+            this_ret_dict = final_return_list[i]
+
+            if this_ret_dict == None:
+                is_synthetic = False
+            else:
+                is_synthetic = True
+            
 
 
+            dep_segments_str = []
+            dep_airlines = []
+            cash_price = 0
+            miles_price_by_airline_or_cash = {}
+            for i in range(len(this_dep_dict[DATABASE_COLUMNS[0]])):
+                flight_segments = this_dep_dict["departure_segments"][i]
+                constructing_str = ""
+                for leg in flight_segments:
+                    constructing_str += leg[0] + " -> "
+                constructing_str += flight_segments[-1][-1]
 
-# For testing (note that no synthetic routing works for the example below, since the return flights are all direct. I just chose
-# it because the results are few and manageable for first class):
+                dep_segments_str.append(constructing_str)
 
-lhr_dxb_all_routings = get_dict_for_all_possible_routings('LHR', 'DXB', 2, 'first', '2025-08-14', return_date_str='2025-08-21')
+                airline_code = this_dep_dict["airline_code"][i]
+                dep_airlines.append(airline_code)
 
-add_flights_to_master_flight_list(lhr_dxb_all_routings)
+                cash_price += this_dep_dict["total_amount"][i]
 
-result = find_possible_routings_from_master_list('LHR', 'DXB', 2, 'first', '2025-08-14', return_date_str='2025-08-21')
-
-if result[0]:
-    departure_dict = repack_flight_array(result[0], ("origin", "destination"))
-else:
-    departure_dict = {}
-
-if result[2]:
-    return_dict = repack_flight_array(result[2], ("origin", "destination"))
-else:
-    return_dict = {}
-
-save_dict_to_csv(departure_dict, 'test_departure_synthetic_routing_segments.csv')
-print('All leg orders for the departure:', result[1])
-save_dict_to_csv(return_dict, 'test_return_synthetic_routing_segments.csv')
-print('All leg orders for the return:', result[3])
+                if airline_code in airlines_with_miles:
+                    if airline_code not in list(miles_price_by_airline_or_cash.keys()):
+                        miles_price_by_airline_or_cash[airline_code] = 0
+                    
+                    miles_price_by_airline_or_cash[airline_code] += this_dep_dict["estimated_price_in_miles"][i]
+                else:
+                    if "cash" not in list(miles_price_by_airline_or_cash.keys()):
+                        miles_price_by_airline_or_cash["cash"] = 0
+                    
+                    miles_price_by_airline_or_cash["cash"] += this_dep_dict["total_amount"][i]
+            
+            dep_time = this_dep_dict["departure_time"][0]
 
 
+            if is_synthetic:
+                ret_segments_str = []
+                ret_airlines = []
+                for i in range(len(this_ret_dict[DATABASE_COLUMNS[0]])):
+                    flight_segments = this_ret_dict["departure_segments"][i]
+                    constructing_str = ""
+                    for leg in flight_segments:
+                        constructing_str += leg[0] + " -> "
+                    constructing_str += flight_segments[-1][-1]
+
+                    ret_segments_str.append(constructing_str)
+
+                    airline_code = this_ret_dict["airline_code"][i]
+                    ret_airlines.append(airline_code)
+
+                    cash_price += this_ret_dict["total_amount"][i]
+
+                    if airline_code in airlines_with_miles:
+                        if airline_code not in list(miles_price_by_airline_or_cash.keys()):
+                            miles_price_by_airline_or_cash[airline_code] = 0
+                        
+                        miles_price_by_airline_or_cash[airline_code] += this_ret_dict["estimated_price_in_miles"][i]
+                    else:
+                        if "cash" not in list(miles_price_by_airline_or_cash.keys()):
+                            miles_price_by_airline_or_cash["cash"] = 0
+                        
+                        miles_price_by_airline_or_cash["cash"] += this_ret_dict["total_amount"][i]
+                    
+                ret_time = this_ret_dict["departure_time"][0]
+            else:
+                ret_segments_str = []
+                ret_airlines = []
+                for i in range(len(this_dep_dict[DATABASE_COLUMNS[0]])):
+                    flight_segments = this_dep_dict["return_segments"][i]
+                    constructing_str = ""
+                    for leg in flight_segments:
+                        constructing_str += leg[0] + " -> "
+                    constructing_str += flight_segments[-1][-1]
+
+                    ret_segments_str.append(constructing_str)
+
+                    airline_code = this_dep_dict["airline_code"][i]
+                    ret_airlines.append(airline_code)
+
+                    # Already handled cash, don't need it again
+                    
+                ret_time = this_dep_dict["return_time"][0]
+
+            useful_dict["is_synthetic"].append(is_synthetic)
+            useful_dict["dep_segments_str"].append(dep_segments_str)
+            useful_dict["dep_airlines"].append(dep_airlines)
+            useful_dict["dep_time"].append(dep_time)
+            useful_dict["ret_segments_str"].append(ret_segments_str)
+            useful_dict["ret_airlines"].append(ret_airlines)
+            useful_dict["ret_time"].append(ret_time)
+            useful_dict["cash_price"].append(cash_price)
+            useful_dict["miles_price_by_airline_or_cash"].append(miles_price_by_airline_or_cash)
+    
+    return useful_dict
+
+            
+
+
+# For testing purposes
+
+if __name__ == "__main__":
+    lhr_dxb_all_routings = get_dict_for_all_possible_routings('LHR', 'DXB', 2, 'first', '2025-08-14', return_date_str='2025-08-21')
+    useful_dict = get_useful_info_of_top_n_sorted_flights(100, "cheapest", 'LHR', 'DXB', 2, 'first', '2025-08-14', return_date_str='2025-08-21')
+
+    save_dict_to_csv(useful_dict, 'test_useful_dict.csv')
