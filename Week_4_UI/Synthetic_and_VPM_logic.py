@@ -752,22 +752,3 @@ save_dict_to_csv(return_dict, 'test_return_synthetic_routing_segments.csv')
 print('All leg orders for the return:', result[3])
 
 
-
-
-
-# lhr_dxb = get_dict_for_route('LHR', 'DXB', 2, 'economy', '2025-08-07', return_date_str='2025-08-14')
-# lhr_jfk = get_dict_for_route('LHR', 'JFK', 2, 'first', '2025-08-07', return_date_str='2025-08-14')
-
-# total_list = combine_packed_flight_arrays([lhr_dxb, lhr_jfk])
-
-
-# add_flights_to_master_flight_list(total_list)
-
-# save_dict_to_csv(turn_master_flight_db_into_dict())
-
-
-
-
-
-
-
