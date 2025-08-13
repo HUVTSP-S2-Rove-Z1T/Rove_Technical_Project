@@ -21,6 +21,27 @@ CABIN_CLASS_FANCY_TO_BASIC = {
     'First Class' : 'first'
 }
 
+# Graphics for later
+for i in range(FLIGHTS_SHOWN):
+    name = "container_background" + str(i)
+
+    dark_or_light = st.context.theme.type
+
+    if i % 2 == 0:
+        if dark_or_light == 'light':
+            color = "#EEEEEE"
+        else:
+            color = "#222222"
+    else:
+        if dark_or_light == 'light':
+            color = "#DDDDDD"
+        else:
+            color = "#333333"
+
+    st.markdown("<style> .st-key-" + name + " {background-color: " + color + ";} </style>", unsafe_allow_html=True)
+
+    
+
 if 'is_logged_in' not in st.session_state:
     st.session_state.is_logged_in = False
 
@@ -184,6 +205,19 @@ def add_search_to_history(username, roundtrip=True, origin="LHR", destination="D
 
     dict_to_db_table(db_filename, table_name, history_dict)
 
+
+def delete_search_history(username):
+    db_filename = "user_auth.db"
+
+    table_columns = ["roundtrip", "origin", "destination", "departure_date", "return_date", "passengers", "cabin_class"]
+    table_name = f"search_history_{username}"
+
+    # Fetch existing history or create new dict
+    history_dict = {col: [] for col in table_columns}
+
+    dict_to_db_table(db_filename, table_name, history_dict)
+
+
 def change_mode_creator(new_mode):
     def change_mode():
         st.session_state.mode = new_mode
@@ -264,24 +298,34 @@ elif current_mode == 'Find Flights':
             # Save search
             add_search_to_history(st.session_state.username, roundtrip, origin, destination, departure_date, return_date, passengers, cabin_class)
 
-            with st.spinner("Fetching flights and calculating redemptions..."):
+            with st.spinner("Fetching flights and calculating redemptions from the Duffel API, please wait. This should not take more than a couple of minutes."):
                 try:
                     search_mode = "cheapest"
                     if 'Maximize Overall Value' in filters:
                         search_mode = "overall_value"
                     
                     only_miles = 'Only Show Flights Payable With Miles' in filters
-
                     
                     selected_airlines_codes = []
                     for name in selected_airlines:
                         selected_airlines_codes.append(synth.airline_name_to_code(name))
                     
                     real_cabin_class = CABIN_CLASS_FANCY_TO_BASIC[cabin_class]
+
+                    if roundtrip:
+                        return_date_str=return_date.strftime("%Y-%m-%d")
+                    else:
+                        return_date_str = None
+
+                    all_routings = synth.get_dict_for_all_possible_routings(origin, destination,
+                                                                            passengers, real_cabin_class, departure_date.strftime("%Y-%m-%d"),
+                                                                            return_date_str=return_date_str)
+                    
+                    synth.add_flights_to_master_flight_list(all_routings)
                     
                     useful_dict = synth.get_useful_info_of_top_n_sorted_flights(FLIGHTS_SHOWN, search_mode, origin, destination,
                                                                                 passengers, real_cabin_class, departure_date.strftime("%Y-%m-%d"),
-                                                                                return_date_str=return_date.strftime("%Y-%m-%d"),
+                                                                                return_date_str=return_date_str,
                                                                                 only_flights_with_award_airlines=only_miles,
                                                                                 airlines_with_miles=selected_airlines_codes)
 
@@ -296,8 +340,8 @@ elif current_mode == 'Find Flights':
                             "Best Value": "green",
                             # "Popular Choice": "blue",
                             # "Flexible": "orange",
-                            "Premium Value": "purple",
-                            "Luxury": "darkred",
+                            "Premium Value": "pink",
+                            "Luxury": "orange",
                             "Best VPM": "teal"
                             # "Synthetic": "teal"
                         }
@@ -316,28 +360,31 @@ elif current_mode == 'Find Flights':
                             # "Synthetic": "teal"
                     }
 
-                    useful_dict = synth.sort_dict_by_lists_sequentially(useful_dict, ["overall_value", "cash_price"], reverse=False)
+                    useful_dict = synth.sort_dict_by_lists_sequentially(useful_dict, ["overall_value", "cash_price"], reverse_list=[False, False])
                     tags_to_ids["Best Value"].append(useful_dict["unique_id"][0])
 
-                    useful_dict = synth.sort_dict_by_lists_sequentially(useful_dict, ["average_perceived_value", "cash_price"], reverse=True)
+                    useful_dict = synth.sort_dict_by_lists_sequentially(useful_dict, ["average_perceived_value", "cash_price"], reverse_list=[True, False])
                     tags_to_ids["Luxury"].append(useful_dict["unique_id"][0])
                     tags_to_ids["Premium Value"].append(useful_dict["unique_id"][1])
 
-                    useful_dict = synth.sort_dict_by_lists_sequentially(useful_dict, ["vpm", "cash_price"], reverse=True)
-                    tags_to_ids["Best VPM"].append(useful_dict["unique_id"][0])
+                    useful_dict = synth.sort_dict_by_lists_sequentially(useful_dict, ["vpm", "cash_price"], reverse_list=[True, False])
+                    if useful_dict["vpm"][0] > 0:
+                        tags_to_ids["Best VPM"].append(useful_dict["unique_id"][0])
 
                     
                     # And re-sort
                     if 'Sort by VPM' in filters:
-                        useful_dict = synth.sort_dict_by_one_list(useful_dict, "vpm", reverse=True)
+                        useful_dict = synth.sort_dict_by_lists_sequentially(useful_dict, ["vpm", "cash_price"], reverse_list=[True, False])
                     elif search_mode == "cheapest":
-                        useful_dict = synth.sort_dict_by_one_list(useful_dict, "cash_price", reverse=False)
+                        useful_dict = synth.sort_dict_by_lists_sequentially(useful_dict, ["cash_price", "overall_value"], reverse_list=[False, False])
                     elif search_mode == "overall_value":
-                        useful_dict = synth.sort_dict_by_one_list(useful_dict, "overall_value", reverse=False)
+                        useful_dict = synth.sort_dict_by_lists_sequentially(useful_dict, ["overall_value", "cash_price"], reverse_list=[False, False])
 
 
                     def show_redemption_card(single_dict, index):
-                        with st.container():
+                        graphics_key = "container_background" + str(index)
+
+                        with st.container(key=graphics_key):
                             if single_dict["is_synthetic"]:
                                 st.header("Synthetic Routing")
                                 cols = st.columns([5,2])
@@ -419,7 +466,7 @@ elif current_mode == 'Find Flights':
 
                                         st.markdown("---")
                                     
-                                    st.markdown(f"**Paying in Cash**")
+                                    st.markdown(f"**Paying with Cash**")
                                     st.markdown(f"{total_cash} USD")
 
 
@@ -430,7 +477,7 @@ elif current_mode == 'Find Flights':
                                 # st.metric(label="You Save", value=redemption["savings"])
                                 # st.progress(min(savings_value, 200)/200)
                                 # st.button("Select", key=f"select_{index}")
-                            st.markdown("---")
+                            # st.markdown("---")
 
                     for i in range(flights_returned):
                         single_dict = {}
@@ -507,6 +554,12 @@ elif current_mode == 'Profile':
                 st.rerun()
 
         page_cols[2].text(f"Page {st.session_state.search_page} of {total_pages}")
+    
+    if entries > 0:
+        delete_button = st.button("Delete Search History")
+        if delete_button:
+            delete_search_history(st.session_state.username)
+            st.rerun()
 
 elif current_mode == 'Log In':
     st.title("Log In")
@@ -516,6 +569,7 @@ elif current_mode == 'Log In':
     if st.button("Log In"):
         if log_in(username, password):
             st.session_state.user_type = 'account'
+            st.session_state.mode = 'Profile'
             st.rerun()
 
 elif current_mode == 'Log Out':
@@ -523,6 +577,7 @@ elif current_mode == 'Log Out':
     st.session_state.username = None
     st.session_state.search_page = 1
     st.success("You have logged out.")
+    st.session_state.mode = 'Welcome'
     st.rerun()
 
 elif current_mode == 'Sign Up':
@@ -537,6 +592,7 @@ elif current_mode == 'Sign Up':
         else:
             if sign_up(username, password):
                 st.success("Account created. You are now logged in.")
+                st.session_state.mode = 'Welcome'
                 st.rerun()
 
 # Utility functions for DB <-> dict (reused from your backend)
