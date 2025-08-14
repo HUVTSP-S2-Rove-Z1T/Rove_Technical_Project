@@ -21,25 +21,25 @@ CABIN_CLASS_FANCY_TO_BASIC = {
     'First Class' : 'first'
 }
 
-# This was kind of messing with the UI, just commenting it out for now
-# # Graphics for later
-# for i in range(FLIGHTS_SHOWN):
-#     name = "container_background" + str(i)
+# Graphics for later
+def css_style_by_index(index):
+    name = "container_background" + str(index)
 
-#     dark_or_light = st.context.theme.type
+    dark_or_light = st.context.theme.type
 
-#     if i % 2 == 0:
-#         if dark_or_light == 'light':
-#             color = "#EEEEEE"
-#         else:
-#             color = "#222222"
-#     else:
-#         if dark_or_light == 'light':
-#             color = "#DDDDDD"
-#         else:
-#             color = "#333333"
-
-#     st.markdown("<style> .st-key-" + name + " {background-color: " + color + ";} </style>", unsafe_allow_html=True)
+    if index % 2 == 0:
+        if dark_or_light == 'light':
+            color = "#EEEEEE"
+        else:
+            color = "#222222"
+    else:
+        if dark_or_light == 'light':
+            color = "#DDDDDD"
+        else:
+            color = "#333333"
+    
+    style_str = "<style> .st-key-" + name + " {background-color: " + color + ";} </style>"
+    return style_str
 
     
 
@@ -384,6 +384,9 @@ elif current_mode == 'Find Flights':
 
                     def show_redemption_card(single_dict, index):
                         graphics_key = "container_background" + str(index)
+
+                        style_str = css_style_by_index(index)
+                        st.markdown(style_str, unsafe_allow_html=True)
 
                         with st.container(key=graphics_key):
                             if single_dict["is_synthetic"]:
