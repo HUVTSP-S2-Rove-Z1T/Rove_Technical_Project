@@ -225,7 +225,7 @@ def change_mode_creator(new_mode):
     return change_mode
 
 # Sidebar
-st.sidebar.header('ROVE :small[:blue[Redemptions]]')
+st.sidebar.header('MaxMiles :small[:blue[By Rove]]')
 st.sidebar.button('Welcome', on_click=change_mode_creator('Welcome'))
 st.sidebar.button('Find Flights', on_click=change_mode_creator('Find Flights'))
 if st.session_state.is_logged_in:
@@ -246,7 +246,7 @@ if current_mode == 'Welcome':
     with col1:
         st.image("https://cdn-icons-png.flaticon.com/512/854/854878.png", width=100)
     with col2:
-        st.title("✈️ Welcome to Rove :blue[Redemptions]")
+        st.title("✈️ Welcome to MaxMiles :blue[By Rove]")
         st.markdown("##### Your smart flight rewards assistant for finding the best **miles-based** flights — fast.")
     st.markdown("---")
     st.markdown("""
@@ -598,35 +598,3 @@ elif current_mode == 'Sign Up':
                 st.success("Account created. You are now logged in.")
                 st.session_state.mode = 'Welcome'
                 st.rerun()
-
-# Utility functions for DB <-> dict (reused from your backend)
-
-def dict_to_db_table(db_filename, table_name, dict_data):
-    with sql.connect(db_filename) as conn:
-        cur = conn.cursor()
-        # Create table if not exists
-        columns = ', '.join([f"{k} TEXT" for k in dict_data.keys()])
-        cur.execute(f"CREATE TABLE IF NOT EXISTS {table_name} ({columns})")
-        # Clear table
-        cur.execute(f"DELETE FROM {table_name}")
-        # Insert data rows
-        n = len(next(iter(dict_data.values())))
-        for i in range(n):
-            values = tuple(dict_data[k][i] for k in dict_data.keys())
-            placeholders = ','.join(['?']*len(values))
-            cur.execute(f"INSERT INTO {table_name} VALUES ({placeholders})", values)
-        conn.commit()
-
-def db_table_to_dict(db_filename, table_name, columns, columns_types):
-    dict_data = {col: [] for col in columns}
-    with sql.connect(db_filename) as conn:
-        cur = conn.cursor()
-        try:
-            cur.execute(f"SELECT * FROM {table_name}")
-            rows = cur.fetchall()
-            for row in rows:
-                for i, col in enumerate(columns):
-                    dict_data[col].append(row[i])
-        except sql.OperationalError:
-            pass
-    return dict_data
