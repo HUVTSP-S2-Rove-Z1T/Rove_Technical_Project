@@ -1,5 +1,5 @@
 import streamlit as st
-from datetime import date
+from datetime import date, timedelta
 import Synthetic_and_VPM_Logic as synth
 import sqlite3 as sql
 import bcrypt as bc
@@ -270,7 +270,7 @@ elif current_mode == 'Find Flights':
         cols = st.columns([1,1,1.5,1.5,1,2])
         origin = cols[0].text_input("From (IATA)", max_chars=4, value="LHR").upper()
         destination = cols[1].text_input("To (IATA)", max_chars=4, value="DXB").upper()
-        departure_date = cols[2].date_input("Departure date", min_value=date.today())
+        departure_date = cols[2].date_input("Departure date", value=date.today() + timedelta(days=1), min_value=date.today())
         if roundtrip:
             return_date = cols[3].date_input("Return date", min_value=departure_date)
         else:
@@ -491,7 +491,8 @@ elif current_mode == 'Find Flights':
                         show_redemption_card(single_dict, i)
 
                 except Exception as e:
-                    st.error(f"An error occurred during flight search: {e}")
+                    st.error(f"No bookings found. Try different dates.")
+                    # st.error(f"An error occurred during flight search: {e}")
 
 elif current_mode == 'Profile':
     st.title(f"{st.session_state.username}'s Profile")
