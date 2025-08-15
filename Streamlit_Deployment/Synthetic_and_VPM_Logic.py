@@ -5,6 +5,8 @@ import time
 import json
 import pandas as pd
 
+DUFFEL_ACCESS_TOKEN = "duffel_test_0hhjFKDZZskobddilp6wH6oQd-fQWp0U3Mdv-3eogXN"
+
 # This uses "master_flight_list.db" to store its information
 
 DATABASE_COLUMNS = ["origin", "destination", "passengers", "cabin_class", "departure_date", "departure_time", "departure_arrival_time", "return_date", "return_time", "return_arrival_time", "airline_name", "airline_code", "order_id", "departure_slice_id", "return_slice_id", "departure_segment_ids", "return_segment_ids", "departure_segments", "return_segments", "total_amount", "estimated_price_in_miles", "overall_value", "total_currency", "duffel_call_time"]
@@ -294,7 +296,7 @@ def get_dict_for_route(origin, destination, passengers, cabin_class, departure_d
 
     data_saved_keys = list(data_saved.keys())
 
-    access_token = "duffel_test_0hhjFKDZZskobddilp6wH6oQd-fQWp0U3Mdv-3eogXN"
+    access_token = DUFFEL_ACCESS_TOKEN
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json",
